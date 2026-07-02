@@ -2204,14 +2204,14 @@ class FormFactor(Enumeration):
     type: list[str] | None = ["Category:OSW83c7be482a5e4e349f9875194e6f180d"]
 
 
-class Format1(Enumeration):
+class BatteryFormat(Enumeration):
     model_config = ConfigDict(
         json_schema_extra={
             "@context": [
                 "/wiki/Category:OSWd02741381aaa4709ae0753a0edc341ce?action=raw&slot=jsonschema"
             ],
             "uuid": "a211cf52-e86e-4792-9768-a769235f7144",
-            "title": "Format",
+            "title": "BatteryFormat",
             "title*": {"en": "Format", "de": "Format"},
             "description": "",
             "description*": {},
@@ -2433,7 +2433,7 @@ class BatteryCellFormFactor(FormFactor):
     type: list[str] | None = ["Category:OSWc8108cfc369241aba154c4c306497c30"]
 
 
-class BatteryCellFormat(Format1):
+class BatteryCellFormat(BatteryFormat):
     model_config = ConfigDict(
         json_schema_extra={
             "@context": [
@@ -2796,7 +2796,7 @@ Electrolyte.model_rebuild()
 ElectrolyteAdditive.model_rebuild()
 EnvironmentalTestChamber.model_rebuild()
 FormFactor.model_rebuild()
-Format1.model_rebuild()
+BatteryFormat.model_rebuild()
 FormationTestProcedure.model_rebuild()
 GEISTestprocedure.model_rebuild()
 Graphite.model_rebuild()
