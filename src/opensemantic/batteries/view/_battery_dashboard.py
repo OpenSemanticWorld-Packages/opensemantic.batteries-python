@@ -3,6 +3,8 @@
 Sidebar layout:
   - Cell tree     (SubClassOf + HasType hierarchy, hierarchical checkbox)
   - Procedure card: procedure tree + axis/unit grid below it
+  - Instances card: live list of test runs matching the cell+procedure
+    selection; per-instance checkbox toggles whether it is plotted
   - Config card
 
 Axis/unit grid (below procedure tree)
@@ -151,12 +153,17 @@ class BatteryDataView(BaseDataView):
         self._selected_cell_ids: List[str] = []
         self._selected_proc_ids: List[str] = []
 
+        # Per-instance plot toggle, keyed by index into ``self._tests``.
+        # Missing key => checked (plotted) by default.
+        self._instance_selections: Dict[int, bool] = {}
+
         # Checkbox widgets keyed by (field, axis) — radio enforcement via flag
         self._axis_checkboxes: Dict[Tuple[str, str], pn.widgets.Checkbox] = {}
         self._updating_checkboxes: bool = False
 
         self._build_cell_tree(cell_nodes, cell_edges)
         self._build_procedure_card(procedure_nodes, procedure_edges)
+        self._build_instances_card()
         self._build_plot()
         self._build_log_console()
         self._build_config_editor()
@@ -320,16 +327,69 @@ class BatteryDataView(BaseDataView):
         self._unit_selections[field] = unit
         self._build_figure()
 
+    # -- Instances card ------------------------------------------------------
+
+    def _build_instances_card(self) -> None:
+        """Sidebar card listing the test runs that match the current selection.
+
+        Populated live by :meth:`_refresh_instances` on every tree change.
+        """
+        self._instances_col = pn.Column()
+        self._instances_card = pn.Card(
+            self._instances_col,
+            title="Instances",
+            collapsed=False,
+        )
+        self._refresh_instances()
+
+    def _refresh_instances(self) -> None:
+        """Rebuild the instance checkbox list from the current cell+proc selection.
+
+        Each matching test gets a checkbox; unchecking it drops that instance
+        from the plot. Toggle state persists across refreshes (keyed by test
+        index) so re-selecting a cell/procedure keeps prior choices; newly
+        matching instances default to checked.
+        """
+        self._instances_col.clear()
+        matches = self._matching_tests()
+        if not matches:
+            self._instances_col.append(
+                pn.pane.Markdown("_Select a cell and a procedure._")
+            )
+            return
+        for m in matches:
+            idx = m["idx"]
+            checked = self._instance_selections.get(idx, True)
+            self._instance_selections[idx] = checked
+            cb = pn.widgets.Checkbox(label=m["label"], value=checked, margin=(2, 8))
+            cb.param.watch(
+                lambda evt, i=idx: self._on_instance_toggle(i, evt.new),
+                ["value"],
+            )
+            self._instances_col.append(cb)
+
+    def _on_instance_toggle(self, idx: int, checked: bool) -> None:
+        self._instance_selections[idx] = checked
+        self._build_figure()
+
     # -- Tree selection ------------------------------------------------------
 
     def _on_tree_change(self, *_args: Any) -> None:
         self._selected_cell_ids = get_checked_instance_ids(self._cell_tree.source)
         self._selected_proc_ids = get_checked_instance_ids(self._proc_tree.source)
+        self._refresh_instances()
         self._build_figure()
 
     # -- Trace resolution ----------------------------------------------------
 
-    def _resolve_traces(self) -> List[Dict]:
+    def _matching_tests(self) -> List[Dict]:
+        """Tests whose cell *and* procedure are both currently selected.
+
+        Returns one dict per match: ``{"idx", "test", "label"}``. ``idx`` is the
+        index into ``self._tests`` and is the stable key for the per-instance
+        plot toggles. Ignores the instance checkboxes — that filtering happens in
+        :meth:`_resolve_traces`.
+        """
         selected_cells = [
             self._cell_objects[k]
             for k in self._selected_cell_ids
@@ -343,14 +403,31 @@ class BatteryDataView(BaseDataView):
         if not selected_cells or not selected_procs:
             return []
 
-        traces = []
-        for test in self._tests:
+        matches = []
+        for idx, test in enumerate(self._tests):
             dut: List[Any] = getattr(test, "device_under_test", []) or []
             proto: Any = getattr(test, "protocol", None)
             cell_match = any(self._same_object(c, t) for c in selected_cells for t in dut)
             proc_match = any(self._same_object(p, proto) for p in selected_procs)
-            if not cell_match or not proc_match:
+            if cell_match and proc_match:
+                matches.append({"idx": idx, "test": test, "label": self._test_label(test)})
+        return matches
+
+    def _test_label(self, test: Any) -> str:
+        """Display label for an instance — the output dataset's, else the test's."""
+        output = getattr(test, "output", None)
+        if output is not None and getattr(output, "label", None):
+            return self._obj_label(output)
+        return self._obj_label(test)
+
+    def _resolve_traces(self) -> List[Dict]:
+        traces = []
+        for m in self._matching_tests():
+            if not self._instance_selections.get(m["idx"], True):
                 continue
+            test = m["test"]
+            dut: List[Any] = getattr(test, "device_under_test", []) or []
+            proto: Any = getattr(test, "protocol", None)
             output = getattr(test, "output", None)
             rows: List[Any] = getattr(output, "data", []) if output else []
             cell_labels = [self._obj_label(c) for c in dut]
@@ -530,7 +607,12 @@ class BatteryDataView(BaseDataView):
 
     @property
     def sidebar_cards(self) -> List[Any]:
-        return [self._cell_card, self._proc_card, self._config_card]
+        return [
+            self._cell_card,
+            self._proc_card,
+            self._instances_card,
+            self._config_card,
+        ]
 
     @property
     def main_cards(self) -> List[Any]:

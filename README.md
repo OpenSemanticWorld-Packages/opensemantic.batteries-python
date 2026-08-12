@@ -211,6 +211,32 @@ A runnable end-to-end example (import a Maccor file, derive a column, serialise,
 re-import, export CSV) is in
 [`examples/import_maccor.py`](examples/import_maccor.py).
 
+## Dashboard (view)
+
+`opensemantic.batteries.view` provides an interactive Panel/Bokeh dashboard,
+`BatteryDataView`, for plotting cycling data, plus `OOLDTreeBuilder` for driving
+its cell / procedure trees straight from Python objects. Units are switched via
+the characteristics' own pint-backed `.to_unit()` (no hard-coded factor tables).
+
+The sidebar has an **Instances** card that live-lists the test runs matching the
+current cell + procedure selection; each has a checkbox so you can pick exactly
+which datasets are plotted.
+
+```bash
+pip install opensemantic.batteries[view]
+panel serve examples/battery_dashboard.py --dev
+```
+
+```python
+from opensemantic.batteries.view import BatteryDataView, OOLDTreeBuilder, PythonSource, has_type
+```
+
+See [`src/opensemantic/batteries/view/README.md`](src/opensemantic/batteries/view/README.md)
+for the architecture (it extends `BaseDataView` from `opensemantic.base.view`),
+the unit-conversion design, and the v1/v2 layer pitfall. Runnable examples:
+[`examples/battery_dashboard.py`](examples/battery_dashboard.py) and
+[`examples/battery_tree_example.py`](examples/battery_tree_example.py).
+
 ## Note
 
 The models in `src/opensemantic/batteries/_model.py` and
