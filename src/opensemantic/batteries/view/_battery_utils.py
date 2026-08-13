@@ -6,11 +6,16 @@ inject_axis_children     — add x/y1/y2 axis-selection subtrees as children
                            of every instance node in-place.
 get_checked_instance_ids — recursively collect node_ids of checked instance nodes,
                            skipping axis_group / axis_row synthetic nodes.
+set_selected_instances   — return a copy of a tree source with ``selected`` flags
+                           rewritten to match a set of instance node_ids
+                           (inverse of get_checked_instance_ids; used to restore
+                           a saved tree selection).
 """
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+import copy
+from typing import Dict, List, Optional, Set
 
 
 def build_oold_tree_source(
@@ -150,3 +155,48 @@ def get_checked_instance_ids(source: List[Dict]) -> List[str]:
 
     walk(source)
     return result
+
+
+def set_selected_instances(
+    source: List[Dict], selected_ids: Set[str]
+) -> List[Dict]:
+    """Return a deep copy of *source* with ``selected`` flags rewritten.
+
+    Instance nodes are selected iff their ``data.node_id`` is in *selected_ids*;
+    class nodes are selected iff *every* descendant instance is selected
+    (hierarchical-checkbox semantics). This is the inverse of
+    :func:`get_checked_instance_ids` and is used to restore a saved tree
+    selection onto a live :class:`Wunderbaum` widget.
+
+    axis_group / axis_row synthetic nodes are left untouched.
+    """
+    src = copy.deepcopy(source)
+
+    def walk(node: Dict) -> bool:
+        data = node.get("data", {})
+        kind = data.get("kind", "")
+        if kind in ("axis_group", "axis_row"):
+            return True  # ignore synthetic nodes in the "all selected" rollup
+
+        children = node.get("children", [])
+        real_children = [
+            c for c in children
+            if c.get("data", {}).get("kind") not in ("axis_group", "axis_row")
+        ]
+        if real_children:
+            child_states = [walk(c) for c in real_children]
+            selected = all(child_states)
+            node["selected"] = selected
+            return selected
+
+        if kind == "instance":
+            selected = data.get("node_id") in selected_ids
+            node["selected"] = selected
+            return selected
+
+        node["selected"] = False
+        return False
+
+    for n in src:
+        walk(n)
+    return src

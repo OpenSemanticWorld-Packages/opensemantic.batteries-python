@@ -17,7 +17,7 @@ pip install -e ".[view]"   # pulls opensemantic.base[view] + opensemantic.lab[vi
 |---|---|
 | `_battery_dashboard.py` | `BatteryDataView` — the cycling-data dashboard |
 | `_oold_tree.py` | `OOLDTreeBuilder`, `PythonSource`, `LazySource`, `RelationSpec`, `has_type`, `field_rel` |
-| `_battery_utils.py` | `build_oold_tree_source`, `get_checked_instance_ids`, `inject_axis_children` |
+| `_battery_utils.py` | `build_oold_tree_source`, `get_checked_instance_ids`, `set_selected_instances`, `inject_axis_children` |
 
 All public names are re-exported from `opensemantic.batteries.view`:
 
@@ -83,8 +83,9 @@ opensemantic.base.view            (shared, stays in base-python)
 opensemantic.batteries.view       (this package)
   BatteryDataView(BaseDataView)    ── cell tree + procedure tree
                                       + instances list + axis/unit grid
+                                      + freeze/unfreeze plot snapshots
   OOLDTreeBuilder                  ── Python objects → Wunderbaum tree source
-  _battery_utils                   ── tree-source + checkbox helpers
+  _battery_utils                   ── tree-source + checkbox/selection helpers
 ```
 
 `BatteryDataView` **extends** `BaseDataView` (the same mixin `DataToolView` and
@@ -121,6 +122,91 @@ Toggle state lives in `self._instance_selections`, keyed by the test's index in
 your prior on/off choices, while newly matching instances default to on. The
 shared matching logic lives in `_matching_tests()`, used by both the card and
 `_resolve_traces()`.
+
+### Sidebar order & card heights
+
+The sidebar cards (`sidebar_cards`) are, top to bottom: **Cells**,
+**Procedures**, **Instances**, **Axes & Units**, **Configuration**. The Cell and
+Procedure tree cards share a fixed height (`_TREE_CARD_HEIGHT`) and scroll, so
+they sit level regardless of how deep either tree is. The axis / unit grid is its
+own **Axes & Units** card (`_build_axis_card`, wiring `_axis_checkboxes` and
+`_unit_selects`) placed below the Instances card — not nested under the
+Procedure tree.
+
+### Freeze / unfreeze
+
+All plots live in **one ordered list**, `self._plots` — each entry a record
+`{"id", "state": PlotState, "active": bool, "figure", "panel"}` — rendered as
+bordered panels inside a single `self._plots_col`. Exactly one record has
+`active=True`: it is rendered *live* from the current selection with a blue
+**❄ Freeze plot** button; every other record is a static snapshot with an
+**Unfreeze** button. Because the active plot is just whichever record is flagged
+active — not a structurally separate area — freezing / unfreezing flips that flag
+*in place* and the visible order never shuffles (this is what fixed the old
+"unfreeze moves the plot to the top" bug).
+
+Each plot's full state is a **`PlotState`** (a small Pydantic model): the
+selected cell ids, procedure ids, per-instance toggles, axis map and per-field
+unit selections. It stores only JSON-friendly values (id / enum-name strings,
+ints, bools) — never live OSW objects — so a snapshot is trivial to copy and
+compare. `_capture_state()` builds one from the live widgets; `_apply_state()`
+writes one back into them.
+
+- **Freeze** (`_on_freeze_click`) snapshots the active plot: it captures a
+  `PlotState` via `_capture_state()` and an *independent* Bokeh figure
+  (`_make_figure()`) into a frozen record (`_make_plot_record(..., active=False)`)
+  **inserted directly below the active record** (`idx + 1`), so a copy drops down
+  exactly one slot. The active record stays active in place and keeps tracking
+  the sidebar.
+- **Unfreeze** (`_on_unfreeze_click`, one button per frozen panel) swaps roles
+  **in place**, so the visible order never shuffles: the currently-active record
+  is frozen *in its own slot* (`_freeze_record_in_place` — its Freeze button
+  becomes Unfreeze), and the clicked record becomes active *in its own slot* (its
+  Unfreeze button becomes the blue Freeze). Then `_apply_state()` writes the
+  unfrozen record's saved `PlotState` back into every tab — trees, instances
+  card, axis grid and unit dropdowns — so the sidebar jumps to it. (If the
+  previously-active plot was empty, it is dropped rather than kept as an empty
+  frozen snapshot.)
+- **Delete** (`_on_delete_click`) — every plot has one. Deleting a frozen record
+  just removes it. Deleting the active record removes it and promotes the plot
+  that fell into its slot (the one directly below — the most recent freeze — or
+  the one above if it was last), restoring that plot's `PlotState`; if it was the
+  only plot, a fresh empty active plot takes its place.
+
+Key design points:
+
+- `_make_figure()` returns a figure (or `None`); `_build_figure()` rebuilds *only
+  the active record's panel* from it and then reassigns `self._plots_col.objects`
+  wholesale via `_render_plots()`. That wholesale reassignment — exactly how
+  Panelini syncs its own panes — is what makes the browser pane repaint
+  immediately on a role swap or selection change, rather than lagging a render
+  until the next interaction (the old "it only updates when I change the
+  selection again" bug). Freeze reuses `_make_figure()` to get a *separate*
+  figure object, so the frozen and active panes never share a Bokeh model.
+- `_apply_state()` restores each tree by **rebuilding the widget**
+  (`_restore_tree()` → `_make_tree()` with a source whose `selected` flags come
+  from `set_selected_instances`) and swapping the new widget into its card
+  (`card[0] = new_tree`). A rebuild — not a `tree.source` reassignment — is what
+  makes the browser checkboxes actually repaint: Wunderbaum diffs a reassigned
+  `source` through a `change:source` echo guard that swallows the update whenever
+  the last tree edit came from the browser (exactly the Unfreeze case), leaving
+  the checkboxes stale. A fresh widget has no prior state to diff against and
+  renders its flags straight from `source`, and replacing a card child is a
+  structural change Panel always syncs. (Plot correctness itself never depends on
+  the JS round-trip — it reads the restored `self._selected_*_ids` directly.)
+- The restored source is derived from a **pristine, plain-data copy** of each
+  tree's source (`self._cell_tree_source` / `self._proc_tree_source`, captured in
+  `_build_cell_tree` / `_build_procedure_card`), *not* from the live
+  `tree.source`. Once the browser has edited a Wunderbaum, its `source` holds
+  live model references, and the `copy.deepcopy` inside `set_selected_instances`
+  would try to copy a Tornado `IOLoop` and raise `RuntimeError`. Restoring from
+  the pristine source (guaranteed plain dicts/lists) avoids that entirely — the
+  widget is always handed a fresh `set_selected_instances(pristine, …)` copy, so
+  the pristine object itself is never mutated.
+- A `self._restoring` guard suppresses the per-widget watchers
+  (`_on_tree_change`, `_on_unit_change`, `_on_instance_toggle`,
+  `_on_checkbox_change`) during a restore, so the many widget syncs collapse into
+  a single `_build_figure()` at the end.
 
 ### `OOLDTreeBuilder`
 

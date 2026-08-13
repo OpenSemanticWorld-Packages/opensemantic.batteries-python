@@ -222,6 +222,21 @@ The sidebar has an **Instances** card that live-lists the test runs matching the
 current cell + procedure selection; each has a checkbox so you can pick exactly
 which datasets are plotted.
 
+Plots live in a single ordered stack. Exactly one plot is **active** — the one
+the sidebar selection drives — and it shows a blue **❄ Freeze plot** button;
+every other plot is a frozen snapshot showing an **Unfreeze** button. Each
+plot's full state is a `PlotState` (Pydantic) — the selected cells, procedures,
+per-instance toggles, axis assignment and unit choices. **Freezing** drops a
+static snapshot (that `PlotState` + the figure) directly below the active plot,
+which stays put and keeps tracking the sidebar, so you can compare
+configurations. **Unfreezing** a snapshot swaps roles *in place* — nothing is
+reordered: the clicked plot becomes active where it sits (its button turns into
+the blue Freeze) and its saved `PlotState` is restored into every tab (including
+the tree checkboxes), while the previously-active plot freezes where it sits (its
+button turns into Unfreeze). Every plot also has a **Delete** button: deleting a
+frozen plot removes that snapshot; deleting the active plot promotes a neighbour
+(or leaves a fresh empty plot if it was the last one).
+
 ```bash
 pip install opensemantic.batteries[view]
 panel serve examples/battery_dashboard.py --dev
