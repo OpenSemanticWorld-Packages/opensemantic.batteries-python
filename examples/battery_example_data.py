@@ -21,7 +21,7 @@ from opensemantic.characteristics.quantitative.v1 import (
     Characteristic,
     ElectricCurrent,
     Time,
-    Voltage,
+    Voltage, Count, ElectricCharge,
 )
 from opensemantic.core.v1 import Item, Label
 from opensemantic.lab.v1 import AnalyticalLaboratoryProcess
@@ -36,6 +36,11 @@ class ElectrochemicalCyclingDataRow(Characteristic):
     test_time: Time = None
     voltage: Voltage = None
     current: ElectricCurrent = None
+
+    cycle_count: Optional[Count] = None
+    step_count: Optional[Count] = None
+    step_time: Optional[Time] = None
+    capacity: Optional[ElectricCharge] = None
 
 
 class ElectrochemicalCyclingDataset(Item):
@@ -72,13 +77,43 @@ class PrismaticCell(BatteryCell):
 # ---------------------------------------------------------------------------
 
 def _sample_cycling_data() -> List[ElectrochemicalCyclingDataRow]:
-    return [
-        ElectrochemicalCyclingDataRow(test_time=Time(value=0.0), voltage=Voltage(value=3.0 + random.uniform(-0.3, 0.3)), current=ElectricCurrent(value=0.0+ random.uniform(-0.1, 0.1))),
-        ElectrochemicalCyclingDataRow(test_time=Time(value=1.0), voltage=Voltage(value=3.1 + random.uniform(-0.3, 0.3)), current=ElectricCurrent(value=0.5+ random.uniform(-0.1, 0.1))),
-        ElectrochemicalCyclingDataRow(test_time=Time(value=2.0), voltage=Voltage(value=3.2 + random.uniform(-0.3, 0.3)), current=ElectricCurrent(value=0.5+ random.uniform(-0.1, 0.1))),
-        ElectrochemicalCyclingDataRow(test_time=Time(value=3.0), voltage=Voltage(value=3.3 + random.uniform(-0.3, 0.3)), current=ElectricCurrent(value=0.5+ random.uniform(-0.1, 0.1))),
-        ElectrochemicalCyclingDataRow(test_time=Time(value=4.0), voltage=Voltage(value=3.1 + random.uniform(-0.3, 0.3)), current=ElectricCurrent(value=0.0+ random.uniform(-0.1, 0.1))),
+    """Five rows of a toy charge profile spanning two cycles.
+
+    ``cycle_count`` rolls over from 0 to 1 at the middle row, and ``capacity``
+    accumulates the charge passed (``Q += I·Δt``) within each cycle, resetting to
+    zero when the new cycle starts — so the two optional columns stay physically
+    sensible.
+    """
+    # (test_time [h], voltage [V], current [A]) base profile.
+    base = [
+        (0.0, 3.0, 0.0),
+        (1.0, 3.1, 0.5),
+        (2.0, 3.2, 0.5),
+        (3.0, 3.3, 0.5),
+        (4.0, 3.1, 0.0),
     ]
+    mid = len(base) // 2  # cycle count increases 0 -> 1 in the middle
+
+    rows: List[ElectrochemicalCyclingDataRow] = []
+    capacity = 0.0
+    prev_cycle = 0
+    prev_time = 0.0
+    for i, (t, v, c) in enumerate(base):
+        cycle = 0 if i < mid else 1
+        if cycle != prev_cycle:
+            capacity = 0.0  # new cycle: accumulated charge restarts
+            prev_cycle = cycle
+        current = c + random.uniform(-0.1, 0.1)
+        capacity += max(current, 0.0) * (t - prev_time)  # Q += I·Δt (Ah)
+        prev_time = t
+        rows.append(ElectrochemicalCyclingDataRow(
+            test_time=Time(value=t),
+            voltage=Voltage(value=v + random.uniform(-0.3, 0.3)),
+            current=ElectricCurrent(value=current),
+            cycle_count=Count(value=cycle),
+            capacity=ElectricCharge(value=round(capacity, 4)),
+        ))
+    return rows
 
 
 def _make_dataset(name: str) -> ElectrochemicalCyclingDataset:
