@@ -47,13 +47,14 @@ import panel as pn
 from bokeh.models import ColumnDataSource, LinearAxis, Range1d
 from bokeh.plotting import figure as bk_figure
 from panelini import Panelini
+from panelini.panels.jsoneditor import JsonEditor
 from panelini.panels.wunderbaum import Wunderbaum
 from pydantic import BaseModel, Field
 
 from opensemantic.base.view import (
     COLORS,
     BaseDataView,
-    DashboardConfig,
+    BaseViewConfig,
     get_available_units,
 )
 
@@ -157,7 +158,7 @@ class BatteryDataView(BaseDataView):
         embeddable: bool = False,
     ):
         self._tests = tests
-        self._config = DashboardConfig()
+        self._config = BaseViewConfig()
         self._title = title
         self._embeddable = embeddable
         self._cell_objects = cell_objects
@@ -1048,6 +1049,31 @@ class BatteryDataView(BaseDataView):
 
     async def _load_and_plot(self) -> None:
         self._build_figure()
+
+    def _build_config_editor(self) -> None:
+        # Localized here because base's BaseDataView dropped this method in its
+        # composable-config refactor (base commit b3c3f1c). Builds a collapsed
+        # JSON editor card bound to this view's ``BaseViewConfig`` instance.
+        schema = self._config.model_json_schema()
+        self._config_editor = JsonEditor(
+            value=self._config.model_dump(),
+            options={
+                "schema": schema,
+                "no_additional_properties": True,
+                "disable_edit_json": False,
+            },
+        )
+        self._config_editor.param.watch(self._on_config_editor_change, ["value"])
+        self._config_card = pn.Card(
+            pn.Column(
+                self._config_editor,
+                sizing_mode="stretch_width",
+                max_height=1000,
+                scroll=True,
+            ),
+            title="Config",
+            collapsed=True,
+        )
 
     def _on_config_editor_change(self, event: Any) -> None:
         pass
