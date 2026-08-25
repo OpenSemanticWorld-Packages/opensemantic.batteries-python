@@ -202,6 +202,34 @@ def set_axis(page, field, axis):
     return True
 
 
+def real_click_by_text(page, text):
+    """Real-mouse-click the first ``<button>`` whose label contains ``text``.
+
+    Panel ``Button`` widgets (Freeze plot / Unfreeze) ignore a synthetic
+    ``el.click()``; drive the Playwright mouse at the button center instead.
+    Searches every shadow DOM. Returns True if a button was found.
+    """
+    pos = page.evaluate(
+        """(t) => {
+            %s
+            for (const el of allEls(document)){
+                if (el.tagName === 'BUTTON' && (el.textContent || '').includes(t)){
+                    const b = el.getBoundingClientRect();
+                    if (b.width > 0 && b.height > 0)
+                        return {x: b.left + b.width / 2, y: b.top + b.height / 2};
+                }
+            }
+            return null;
+        }"""
+        % _ROW_CENTER_JS,
+        text,
+    )
+    if not pos:
+        return False
+    _real_click(page, pos)
+    return True
+
+
 def toggle_row_checkbox(page, text):
     """Real-click the single checkbox on the row whose label contains ``text``.
 
