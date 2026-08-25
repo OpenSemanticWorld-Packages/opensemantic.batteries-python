@@ -4,15 +4,15 @@ Serves ``examples/battery_dashboard.py`` (synthetic sample data: three cells,
 three procedures, six tests) and drives the UI with Playwright, capturing frames
 stitched into an animated GIF.
 
-Unlike the single-file Maccor demo, this one checks each tree's *root* checkbox
-(``selectMode: hier`` selects every descendant), so all cells and procedures are
-picked at once and every matching test plots — showing multiple overlaid traces.
-
-The story the GIF tells:
+The story the GIF tells (a fuller walk-through than the Maccor demo):
   1. Empty dashboard; open the left sidebar to reveal the category trees.
-  2. Check the whole cell tree (all cells).
+  2. Check only the round cells (the ``CylindricalCell`` subtree -> Cell A, B).
   3. Check the whole procedure tree (all procedures) -> every matching test
      plots as its own trace.
+  4. Uncheck the "Aging (B)" run in the Instances card -> that trace drops.
+  5. Put ``current`` on the y2 (right) axis in Axes & Units -> a second axis
+     appears with the current traces.
+  6. Switch the current unit from A to mA -> the right axis rescales.
 
 Prerequisites:
     pip install -e ".[docs]"      # playwright + imageio
@@ -29,8 +29,11 @@ from _screenshot_utils import (
     capture,
     click_tree_checkbox,
     open_sidebar,
+    set_axis,
+    set_unit,
     start_server,
     stop_server,
+    toggle_row_checkbox,
 )
 from playwright.sync_api import sync_playwright
 
@@ -39,12 +42,15 @@ REPO_DIR = os.path.dirname(os.path.dirname(MEDIA_DIR))
 EXAMPLE = os.path.join(REPO_DIR, "examples", "battery_dashboard.py")
 PORT = 5022
 URL = f"http://localhost:{PORT}/battery_dashboard"
-VIEWPORT = {"width": 1500, "height": 1000}
+# Tall viewport so the whole sidebar (down to the ``current`` row of the Axes &
+# Units grid) is on-screen — the axis/unit helpers click by viewport geometry.
+VIEWPORT = {"width": 1500, "height": 1400}
 
-# selectMode: hier -> checking the root checkbox (index 0) selects every cell /
-# procedure under it, so all six tests plot at once.
+# Cell-tree checkbox order (selectMode: hier): 0 BatteryCell (root), 1
+# CylindricalCell (-> Cell A, Cell B = the round cells), 4 PrismaticCell.
 CELL_TREE, PROC_TREE = 0, 1
-ROOT_CB = 0
+CYLINDRICAL_CB = 1
+PROC_ROOT_CB = 0
 
 GIF_OUT = os.path.join(MEDIA_DIR, "battery_dashboard.gif")
 PNG_OUT = os.path.join(MEDIA_DIR, "battery_dashboard.png")
@@ -66,15 +72,28 @@ def main():
             print("  toggle:", open_sidebar(page))
             capture(page, frames, 1500)  # trees revealed
 
-            print("Select all cells...")
-            print("  cell root:", click_tree_checkbox(page, CELL_TREE, ROOT_CB))
+            print("Select round (cylindrical) cells...")
+            print("  cylindrical:", click_tree_checkbox(page, CELL_TREE, CYLINDRICAL_CB))
             capture(page, frames, 1500)
 
             print("Select all procedures...")
-            print("  proc root:", click_tree_checkbox(page, PROC_TREE, ROOT_CB))
-            capture(page, frames, 3000)  # matching tests selected -> traces plot
+            print("  proc root:", click_tree_checkbox(page, PROC_TREE, PROC_ROOT_CB))
+            capture(page, frames, 3000)  # matching tests plot as traces
             plot_frame = frames[-1]
-            capture(page, frames, 1500)  # hold on the plotted result
+
+            print("Uncheck the Aging (B) instance...")
+            print("  uncheck:", toggle_row_checkbox(page, "Aging (B)"))
+            capture(page, frames, 2500)  # that trace drops
+
+            print("Put current on the y2 axis...")
+            print("  current y2:", set_axis(page, "current", "y2"))
+            capture(page, frames, 2500)  # second (right) axis appears
+
+            print("Switch current unit A -> mA...")
+            print("  mA:", set_unit(page, "current", "mA"))
+            capture(page, frames, 2500)  # right axis rescales
+            plot_frame = frames[-1]
+            capture(page, frames, 1500)  # hold on the final result
     finally:
         stop_server(proc)
 

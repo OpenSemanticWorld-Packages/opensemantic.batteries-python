@@ -135,6 +135,149 @@ def open_sidebar(page):
     return real_click_selector(page, ".left-navbar-button")
 
 
+# -- Axes & Units grid (anonymous checkboxes + unit selects) -----------------
+# The grid rows are ``[field label | x | y1 | y2 | unit-select]`` and none of the
+# widgets carry an id or css class, so they are located *geometrically*: find the
+# vertical center of the row whose field-label text matches, then pick the
+# checkbox / select whose bounding box sits on that same row.
+
+_ROW_CENTER_JS = """
+function* allEls(r){
+    for (const el of r.querySelectorAll('*')){
+        yield el;
+        if (el.shadowRoot) yield* allEls(el.shadowRoot);
+    }
+}
+function rowCenterY(field){
+    for (const el of allEls(document)){
+        if (el.children.length === 0 && (el.textContent || '').trim() === field){
+            const b = el.getBoundingClientRect();
+            if (b.width > 0 && b.height > 0) return b.top + b.height / 2;
+        }
+    }
+    return null;
+}
+"""
+
+
+def _real_click(page, pos):
+    page.mouse.move(pos["x"], pos["y"])
+    page.mouse.down()
+    page.wait_for_timeout(60)
+    page.mouse.up()
+
+
+def set_axis(page, field, axis):
+    """Toggle the x / y1 / y2 checkbox of the Axes & Units row for ``field``.
+
+    Real-clicks the checkbox (Panel/Bokeh widgets can ignore synthetic clicks).
+    The row must be within the viewport — size the viewport so the field is
+    visible. Returns True if the checkbox was found.
+    """
+    axis_idx = {"x": 0, "y1": 1, "y2": 2}[axis]
+    pos = page.evaluate(
+        """(args) => {
+            %s
+            const rowY = rowCenterY(args.field);
+            if (rowY == null) return null;
+            const cbs = [];
+            for (const el of allEls(document)){
+                if (el.tagName === 'INPUT' && el.type === 'checkbox'){
+                    const b = el.getBoundingClientRect();
+                    if (b.width > 0 && Math.abs((b.top + b.height / 2) - rowY) < 20)
+                        cbs.push({x: b.left + b.width / 2, y: b.top + b.height / 2,
+                                  left: b.left});
+                }
+            }
+            cbs.sort((a, b) => a.left - b.left);
+            const t = cbs[args.axisIdx];
+            return t ? {x: t.x, y: t.y} : null;
+        }"""
+        % _ROW_CENTER_JS,
+        {"field": field, "axisIdx": axis_idx},
+    )
+    if not pos:
+        return False
+    _real_click(page, pos)
+    return True
+
+
+def toggle_row_checkbox(page, text):
+    """Real-click the single checkbox on the row whose label contains ``text``.
+
+    For the Instances card (one checkbox + a text label per row): finds the leaf
+    element containing ``text``, then the checkbox to its left on the same row.
+    Returns True if found.
+    """
+    pos = page.evaluate(
+        """(t) => {
+            %s
+            let rowY = null, labelLeft = null;
+            for (const el of allEls(document)){
+                if (el.children.length === 0 && (el.textContent || '').includes(t)){
+                    const b = el.getBoundingClientRect();
+                    if (b.width > 0 && b.height > 0){
+                        rowY = b.top + b.height / 2; labelLeft = b.left; break;
+                    }
+                }
+            }
+            if (rowY == null) return null;
+            let best = null;
+            for (const el of allEls(document)){
+                if (el.tagName === 'INPUT' && el.type === 'checkbox'){
+                    const b = el.getBoundingClientRect();
+                    if (b.width > 0 && Math.abs((b.top + b.height / 2) - rowY) < 18
+                        && b.left < labelLeft){
+                        if (!best || b.left > best.left)
+                            best = {x: b.left + b.width / 2, y: b.top + b.height / 2,
+                                    left: b.left};
+                    }
+                }
+            }
+            return best ? {x: best.x, y: best.y} : null;
+        }"""
+        % _ROW_CENTER_JS,
+        text,
+    )
+    if not pos:
+        return False
+    _real_click(page, pos)
+    return True
+
+
+def set_unit(page, field, unit_symbol):
+    """Pick ``unit_symbol`` (e.g. "mA") in the Axes & Units unit select for ``field``.
+
+    Sets the aligned ``<select>``'s value to the option whose visible text is
+    ``unit_symbol`` and dispatches a ``change`` event so Bokeh updates the model.
+    Returns True if the option was found and applied.
+    """
+    return page.evaluate(
+        """(args) => {
+            %s
+            const rowY = rowCenterY(args.field);
+            if (rowY == null) return false;
+            for (const el of allEls(document)){
+                if (el.tagName === 'SELECT'){
+                    const b = el.getBoundingClientRect();
+                    if (b.width > 0 && Math.abs((b.top + b.height / 2) - rowY) < 16){
+                        for (const opt of el.options){
+                            if ((opt.textContent || '').trim() === args.unit){
+                                el.value = opt.value;
+                                el.dispatchEvent(new Event('change', {bubbles: true}));
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+            return false;
+        }"""
+        % _ROW_CENTER_JS,
+        {"field": field, "unit": unit_symbol},
+    )
+
+
 def capture(page, frames, delay=800, full_page=False):
     """Wait ``delay`` ms, then append a screenshot to ``frames``."""
     page.wait_for_timeout(delay)
