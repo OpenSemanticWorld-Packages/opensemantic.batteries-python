@@ -59,7 +59,6 @@ class ElectrochemicalTest(AnalyticalLaboratoryProcess):
     protocol           the procedure instance followed (AgingTestProcedure, …)
     output             the resulting cycling dataset
     """
-    # device_under_test: list[PhysicalItem] already on AnalyticalLaboratoryProcess
     protocol: Optional[ElectrochemicalTestProcedure] = None
     output: Optional[ElectrochemicalCyclingDataset] = None
 
