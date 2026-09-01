@@ -89,9 +89,15 @@ class OSLBatteryBackend(BatteryDataBackend):
         field_names: Optional[List[str]] = None,
         cell_root_label: str = BatteryCell.__name__,
         procedure_root_label: str = ElectrochemicalTestProcedure.__name__,
+        disjunctive_query: bool = True,
     ) -> None:
         self._osw = osw_obj
         self._row_class = row_class
+        # ``True``  -> one disjunctive (``||``) search covering every selected
+        #              cell × procedure at once (default: fewest round-trips).
+        # ``False`` -> one search per (cell, procedure) pair (the older, more
+        #              conservative path — use if a wiki mishandles ``||``).
+        self._disjunctive = disjunctive_query
         self._cell_root_iri = cell_root_iri or BatteryCell.get_cls_iri()
         self._proc_root_iri = (
             procedure_root_iri or ElectrochemicalTestProcedure.get_cls_iri()
@@ -146,30 +152,58 @@ class OSLBatteryBackend(BatteryDataBackend):
     def datasets(
         self, cell_iris: List[str], proc_iris: List[str]
     ) -> List[Dataset]:
-        """Cycling datasets for each (cell, procedure) pair, de-duplicated.
+        """Cycling datasets for the selected cells × procedures, de-duplicated.
 
-        Runs one dataset search per pair and drops repeats, resolving each
-        dataset's rows (cached). Matching happens server-side, so every returned
-        page is a genuine match.
+        By default (``disjunctive_query=True``) this is a **single** semantic
+        search that ``||``-ORs every selected cell and every selected procedure,
+        so N cells × M procedures cost one round-trip instead of N×M. Set
+        ``disjunctive_query=False`` to fall back to one search per pair. Either
+        way the matching page titles are de-duplicated and their rows resolved
+        (cached); matching happens server-side, so every returned page is a
+        genuine match.
         """
         if not cell_iris or not proc_iris or self._osw is None:
             return []
+        if self._disjunctive:
+            titles = self._dataset_titles_or(cell_iris, proc_iris)
+        else:
+            titles = self._dataset_titles_per_pair(cell_iris, proc_iris)
         seen: Set[str] = set()
         result: List[Dataset] = []
+        for title in titles:
+            if title in seen:
+                continue
+            seen.add(title)
+            result.append(
+                Dataset(
+                    id=title,
+                    label=self.page_name(title),
+                    rows=self._rows_for(title),
+                )
+            )
+        return result
+
+    def _dataset_titles_or(
+        self, cell_iris: List[str], proc_iris: List[str]
+    ) -> List[str]:
+        """One disjunctive search over all selected cells × procedures.
+
+        ``[[-HasOutput.HasDut::a||b]]`` matches a test whose DUT is *any* of the
+        listed cells; likewise for the procedure. Combined with the schema
+        clause this yields every dataset for any (selected cell, selected
+        procedure) pairing in a single query.
+        """
+        return self._datasets_for("||".join(cell_iris), "||".join(proc_iris))
+
+    def _dataset_titles_per_pair(
+        self, cell_iris: List[str], proc_iris: List[str]
+    ) -> List[str]:
+        """One search per (cell, procedure) pair (opt-in conservative path)."""
+        titles: List[str] = []
         for cell in cell_iris:
             for proc in proc_iris:
-                for title in self._datasets_for(cell, proc):
-                    if title in seen:
-                        continue
-                    seen.add(title)
-                    result.append(
-                        Dataset(
-                            id=title,
-                            label=self.page_name(title),
-                            rows=self._rows_for(title),
-                        )
-                    )
-        return result
+                titles.extend(self._datasets_for(cell, proc))
+        return titles
 
     # -- Labels --------------------------------------------------------------
 
@@ -215,6 +249,9 @@ class OSLBatteryBackend(BatteryDataBackend):
 
     def _datasets_for(self, cell_iri: str, proc_iri: str) -> List[str]:
         """Cycling datasets output by an ElectrochemicalTest on this cell + proc.
+
+        ``cell_iri`` / ``proc_iri`` may each be a single IRI or a ``||``-joined
+        disjunction of IRIs (see :meth:`_dataset_titles_or`).
 
         Uses the inverse-property path from ``OSL_helper/Query.py``: find each
         page that is the ``HasOutput`` of a test whose schema / DUT / procedure
