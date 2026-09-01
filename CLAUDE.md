@@ -79,7 +79,8 @@ tests/
 .venv/Scripts/panel serve examples/battery_dashboard.py --dev
 
 # OSL-backed dashboard: lazy trees + tests loaded live from an OSL wiki
-# (needs the osw package + examples/accounts.pwd.yaml credentials)
+# (install the osl extra for the osw package; needs examples/accounts.pwd.yaml)
+.venv/Scripts/python.exe -m pip install -e ".[osl]"
 .venv/Scripts/panel serve examples/battery_dashboard_OSL.py --dev
 
 # minimal tree-only example
