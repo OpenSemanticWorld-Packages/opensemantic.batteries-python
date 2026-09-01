@@ -16,7 +16,7 @@ from opensemantic.batteries.v1 import (
     AgingTestProcedure,
     BatteryCell,
     ElectrochemicalTestProcedure,
-    FormationTestProcedure, TestProcedureItem,
+    FormationTestProcedure, TestProcedureItem,ElectrochemicalTest
 )
 from opensemantic.characteristics.quantitative.v1 import (
     Characteristic,
@@ -32,7 +32,7 @@ from opensemantic.lab.v1 import AnalyticalLaboratoryProcess
 # Schema definitions
 # ---------------------------------------------------------------------------
 
-class ElectrochemicalCyclingDataRow(Characteristic):
+class CyclingDataRow(Characteristic):
     """One row of a cycling measurement (structured value, no label needed)."""
     test_time: Time = None
     voltage: Voltage = None
@@ -50,26 +50,7 @@ class ElectrochemicalCyclingDataset(Item):
     Inherits from Item (information artifact on the dataspace).
     `data` is empty on the dataspace; populated in memory after deserialization.
     """
-    data: List[ElectrochemicalCyclingDataRow] = []
-
-
-class ElectrochemicalTest(AnalyticalLaboratoryProcess):
-    """One run of an electrochemical test on one or more cells.
-
-    device_under_test  inherited from AnalyticalLaboratoryProcess
-    test_procedure     the procedure(s) followed, as ``TestProcedureItem``
-                       wrappers whose ``test_procedure_instance`` is the
-                       procedure's OSW IRI (see the ``test_procedure_*`` lists)
-    protocol           legacy single-procedure link (still used by the Maccor
-                       example); kept so both linkage styles work
-    output             the resulting cycling dataset
-
-    ``test_procedure`` overrides the ``List[Procedure]`` field inherited from
-    ``AnalyticalLaboratoryProcess`` so it accepts battery ``TestProcedureItem``s.
-    """
-    protocol: Optional[ElectrochemicalTestProcedure] = None
-    test_procedure: Optional[List[TestProcedureItem]] = None
-    output: Optional[ElectrochemicalCyclingDataset] = None
+    data: List[CyclingDataRow] = []
 
 
 class CylindricalCell(BatteryCell):
@@ -84,7 +65,7 @@ class PrismaticCell(BatteryCell):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _sample_cycling_data() -> List[ElectrochemicalCyclingDataRow]:
+def _sample_cycling_data() -> List[CyclingDataRow]:
     """Five rows of a toy charge profile spanning two cycles.
 
     ``cycle_count`` rolls over from 0 to 1 at the middle row, and ``capacity``
@@ -102,7 +83,7 @@ def _sample_cycling_data() -> List[ElectrochemicalCyclingDataRow]:
     ]
     mid = len(base) // 2  # cycle count increases 0 -> 1 in the middle
 
-    rows: List[ElectrochemicalCyclingDataRow] = []
+    rows: List[CyclingDataRow] = []
     capacity = 0.0
     prev_cycle = 0
     prev_time = 0.0
@@ -114,7 +95,7 @@ def _sample_cycling_data() -> List[ElectrochemicalCyclingDataRow]:
         current = c + random.uniform(-0.1, 0.1)
         capacity += max(current, 0.0) * (t - prev_time)  # Q += I·Δt (Ah)
         prev_time = t
-        rows.append(ElectrochemicalCyclingDataRow(
+        rows.append(CyclingDataRow(
             test_time=Time(value=t),
             voltage=Voltage(value=v + random.uniform(-0.3, 0.3)),
             current=ElectricCurrent(value=current),
@@ -124,11 +105,12 @@ def _sample_cycling_data() -> List[ElectrochemicalCyclingDataRow]:
     return rows
 
 
-def _make_dataset(name: str) -> ElectrochemicalCyclingDataset:
-    return ElectrochemicalCyclingDataset(
+def _make_dataset(name: str) -> List[ElectrochemicalCyclingDataset]:
+    # The generated ``ElectrochemicalTest.output`` is a *list* of datasets.
+    return [ElectrochemicalCyclingDataset(
         label=[Label(text=name)],
         data=_sample_cycling_data(),
-    )
+    )]
 
 
 # ---------------------------------------------------------------------------
