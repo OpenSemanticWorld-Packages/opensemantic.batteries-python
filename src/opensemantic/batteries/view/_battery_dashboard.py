@@ -146,6 +146,9 @@ class BatteryDataView(BaseDataView):
     # Fixed height for the Cell and Procedure tree cards, so they sit at the
     # same height in the sidebar and their trees scroll rather than resize.
     _TREE_CARD_HEIGHT = 260
+    # The Instances card holds a flat one-level tree, so it needs less room —
+    # half a tree card's height, scrolling when there are many matches.
+    _INSTANCES_CARD_HEIGHT = _TREE_CARD_HEIGHT // 2
 
     def __init__(
         self,
@@ -444,6 +447,8 @@ class BatteryDataView(BaseDataView):
             pn.pane.Markdown("_Select a cell and a procedure._"),
             title="Instances",
             collapsed=False,
+            height=self._INSTANCES_CARD_HEIGHT,
+            scroll=True,
         )
         self._refresh_instances()
 
