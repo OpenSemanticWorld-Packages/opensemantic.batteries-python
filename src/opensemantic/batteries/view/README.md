@@ -15,7 +15,10 @@ pip install -e ".[view]"   # pulls opensemantic.base[view] + opensemantic.lab[vi
 
 | module | contents |
 |---|---|
-| `_battery_dashboard.py` | `BatteryDataView` — the cycling-data dashboard |
+| `_battery_dashboard.py` | `BatteryDataView` — the in-memory cycling-data dashboard |
+| `_lazy_dashboard.py` | `LazyBatteryDataView` — lazy, backend-driven variant of the dashboard |
+| `_backend.py` | `BatteryDataBackend` (ABC), `TreeNode`, `Dataset` — the swappable-backend seam |
+| `_osl_backend.py` | `OSLBatteryBackend`, `connect_osw` — live-OSL-wiki backend |
 | `_oold_tree.py` | `OOLDTreeBuilder`, `PythonSource`, `LazySource`, `RelationSpec`, `has_type`, `field_rel` |
 | `_battery_utils.py` | `build_oold_tree_source`, `get_checked_instance_ids`, `set_selected_instances`, `inject_axis_children` |
 
@@ -24,8 +27,43 @@ All public names are re-exported from `opensemantic.batteries.view`:
 ```python
 from opensemantic.batteries.view import (
     BatteryDataView,
+    LazyBatteryDataView, BatteryDataBackend, TreeNode, Dataset,
+    OSLBatteryBackend, connect_osw,
     OOLDTreeBuilder, PythonSource, LazySource, RelationSpec, has_type, field_rel,
 )
+```
+
+## Lazy dashboard & swappable backends
+
+`BatteryDataView` materialises the whole cell/procedure graph up front from OO-LD
+nodes/edges. `LazyBatteryDataView` instead loads **on demand** from a
+`BatteryDataBackend`: each tree starts as one collapsed root category and only
+asks the backend for a node's children when the user expands it; selecting cells
++ procedures asks the backend for the matching `Dataset`s, which flow through the
+base view's unchanged axis / unit / freeze pipeline.
+
+A backend answers four things (see `_backend.py`): the two tree roots
+(`cell_root` / `procedure_root`), a category's `children(iri)`, the
+`datasets(cell_iris, proc_iris)` for a selection, and the `row_class` whose typed
+fields drive the axis grid. Swapping the data source (a live wiki, a local cache,
+a test double, a REST API) is a new `BatteryDataBackend` subclass — the view and
+the example wiring don't change.
+
+`OSLBatteryBackend` is the reference implementation over a live OSL wiki; `osw`
+is imported lazily (only `connect_osw` needs it), so importing the `view` package
+never requires the optional `osw` dependency — install it with the `osl` extra
+(`pip install -e ".[osl]"`). Runnable wiring:
+[`examples/battery_dashboard_OSL.py`](../../../../examples/battery_dashboard_OSL.py).
+
+```python
+from opensemantic.batteries.view import (
+    LazyBatteryDataView, OSLBatteryBackend, connect_osw,
+)
+backend = OSLBatteryBackend(
+    osw_obj=connect_osw("accounts.pwd.yaml"),
+    row_class=CyclingDataRow,
+)
+LazyBatteryDataView(backend=backend).servable()
 ```
 
 ## Quick start
