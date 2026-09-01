@@ -1,9 +1,11 @@
 """Tests for the BatteryDataView "Instances" sidebar card.
 
-The card lists the test runs whose cell *and* procedure are both selected, with
-one checkbox per instance; unchecking one drops it from the plot. These tests
-drive the view in ``embeddable=True`` mode (no browser / Panelini app) and poke
-the selection/toggle handlers the tree widgets would otherwise call.
+The card lists the test runs whose cell *and* procedure are both selected as a
+flat :class:`Wunderbaum` — one checkable leaf per instance; unchecking one drops
+it from the plot. These tests drive the view in ``embeddable=True`` mode (no
+browser / Panelini app) and poke the selection/toggle handlers the tree widgets
+would otherwise call — for the instances tree, the ``select`` event carrying
+``{"key": "inst-<idx>", "flag": <bool>}`` that its ``tree_event_callback`` fires.
 
 Skipped as a group when the ``[view]`` extra is not installed.
 """
@@ -19,8 +21,6 @@ pytest.importorskip("panelini")
 
 from _view_helpers import make_view, node_id_for, select  # noqa: E402
 
-Checkbox = panel.widgets.Checkbox
-
 
 @pytest.fixture
 def view():
@@ -28,12 +28,21 @@ def view():
 
 
 def _instance_labels(view) -> List[str]:
-    return [w.name for w in view._instances_col if isinstance(w, Checkbox)]
+    """Leaf titles in the instances tree (``[]`` when it shows the placeholder)."""
+    tree = view._instances_tree
+    if tree is None:
+        return []
+    return [n["title"] for n in tree.source]
+
+
+def _toggle_instance(view, idx: int, flag: bool) -> None:
+    """Simulate the instances tree's ``select`` event for one leaf."""
+    view._on_instance_event("select", {"key": f"inst-{idx}", "flag": flag})
 
 
 def test_no_selection_lists_nothing(view):
     assert view._matching_tests() == []
-    assert _instance_labels(view) == []  # only a placeholder pane, no checkboxes
+    assert _instance_labels(view) == []  # placeholder prompt, no tree
     assert view._resolve_traces() == []
 
 
@@ -62,7 +71,7 @@ def test_unchecking_instance_removes_it_from_plot(view):
 
     # Uncheck the first matching instance -> dropped from the plotted traces.
     idx = view._matching_tests()[0]["idx"]
-    view._on_instance_toggle(idx, False)
+    _toggle_instance(view, idx, False)
     assert len(view._resolve_traces()) == 1
 
 
@@ -70,11 +79,11 @@ def test_toggle_state_persists_across_refresh(view):
     select(view, cell=view._cell_a, proc=view._formation)
 
     idx = view._matching_tests()[0]["idx"]
-    view._on_instance_toggle(idx, False)
+    _toggle_instance(view, idx, False)
 
     # A subsequent refresh (e.g. another tree change) keeps the instance
     # unchecked rather than resetting it to the default checked state.
     view._refresh_instances()
-    cb = next(w for w in view._instances_col if isinstance(w, Checkbox))
-    assert cb.value is False
+    node = view._instances_tree.source[0]
+    assert node["selected"] is False
     assert view._resolve_traces() == []

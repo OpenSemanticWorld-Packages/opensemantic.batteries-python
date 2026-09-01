@@ -66,6 +66,25 @@ backend = OSLBatteryBackend(
 LazyBatteryDataView(backend=backend).servable()
 ```
 
+To try the lazy view without a wiki (no credentials, no network) run
+[`examples/battery_dashboard_lazy.py`](../../../../examples/battery_dashboard_lazy.py),
+which wires an in-memory `BatteryDataBackend` (the same fixture the
+`tests/test_lazy_view.py` regression tests use).
+
+### Selection is read from `source`, not from `select` events (gotcha)
+
+`LazyBatteryDataView` learns what the user ticked by **watching each tree's
+`source` param** and diffing the set of `selected` node keys — *not* from the
+widget's per-node `select` event. Those events all arrive through Wunderbaum's
+single `_event_data` slot, and one checkbox click fires
+`click → deactivate → select → activate` within a single JS tick; Bokeh
+coalesces same-tick param writes and transmits only the **last** value, so the
+`select` is silently dropped and the cascade never runs in the browser (it looks
+fine in direct-Python tests, which is how this regressed once). `source` is
+full-state and idempotent, so coalescing can't lose it. If you touch the
+selection path, drive it from `source` and keep the `tests/test_lazy_view.py`
+tests (they write `source` exactly as the browser does) green.
+
 ## Quick start
 
 A runnable version is in [`examples/battery_dashboard.py`](../../../../examples/battery_dashboard.py).
@@ -155,11 +174,13 @@ whose cell *and* procedure are both currently checked — i.e. the exact set tha
 `_resolve_traces()` would plot. It refreshes live on every tree change
 (`_on_tree_change` → `_refresh_instances`).
 
-Each matching instance gets a checkbox (labelled with its output dataset's label,
-falling back to the test-run label), checked by default. Unchecking one removes
-that instance from the plot without changing the tree selection —
-`_resolve_traces()` skips any instance whose toggle is off. When no cell or
-procedure is selected, the card shows a placeholder prompt instead.
+Each matching instance is a checkable leaf in a flat `Wunderbaum` (keyed
+`inst-<idx>`, labelled with its output dataset's label, falling back to the
+test-run label), checked by default. Unchecking one removes that instance from
+the plot without changing the tree selection — `_resolve_traces()` skips any
+instance whose toggle is off. The `select` event (`_on_instance_event`) recovers
+the test index from the node key. When no cell or procedure is selected, the card
+shows a placeholder prompt instead.
 
 Toggle state lives in `self._instance_selections`, keyed by the test's index in
 `tests`, so it **persists across refreshes**: re-selecting a cell/procedure keeps
@@ -248,7 +269,7 @@ Key design points:
   widget is always handed a fresh `set_selected_instances(pristine, …)` copy, so
   the pristine object itself is never mutated.
 - A `self._restoring` guard suppresses the per-widget watchers
-  (`_on_tree_change`, `_on_unit_change`, `_on_instance_toggle`,
+  (`_on_tree_change`, `_on_unit_change`, `_on_instance_event`,
   `_on_checkbox_change`) during a restore, so the many widget syncs collapse into
   a single `_build_figure()` at the end.
 

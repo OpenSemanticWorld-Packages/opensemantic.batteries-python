@@ -435,46 +435,79 @@ class BatteryDataView(BaseDataView):
     def _build_instances_card(self) -> None:
         """Sidebar card listing the test runs that match the current selection.
 
-        Populated live by :meth:`_refresh_instances` on every tree change.
+        The list is a flat, single-level :class:`Wunderbaum` (one checkable leaf
+        per matching test) rebuilt live by :meth:`_refresh_instances` on every
+        tree change — mirroring the cell / procedure trees.
         """
-        self._instances_col = pn.Column()
+        self._instances_tree: Optional[Wunderbaum] = None
         self._instances_card = pn.Card(
-            self._instances_col,
+            pn.pane.Markdown("_Select a cell and a procedure._"),
             title="Instances",
             collapsed=False,
         )
         self._refresh_instances()
 
     def _refresh_instances(self) -> None:
-        """Rebuild the instance checkbox list from the current cell+proc selection.
+        """Rebuild the instances tree from the current cell+proc selection.
 
-        Each matching test gets a checkbox; unchecking it drops that instance
-        from the plot. Toggle state persists across refreshes (keyed by test
-        index) so re-selecting a cell/procedure keeps prior choices; newly
-        matching instances default to checked.
+        Each matching test becomes a checkable leaf; unchecking it drops that
+        instance from the plot. Toggle state persists across refreshes (keyed by
+        test index) so re-selecting a cell/procedure keeps prior choices; newly
+        matching instances default to checked. When nothing matches, the card
+        falls back to a prompt.
+
+        The fresh widget is swapped into ``card[0]`` (rather than the source
+        being reassigned) so the browser repaints — see :meth:`_restore_tree`
+        for why an in-place ``source`` update can be swallowed.
         """
-        self._instances_col.clear()
         matches = self._matching_tests()
         if not matches:
-            self._instances_col.append(
-                pn.pane.Markdown("_Select a cell and a procedure._")
+            self._instances_tree = None
+            self._instances_card[0] = pn.pane.Markdown(
+                "_Select a cell and a procedure._"
             )
             return
+
+        source: List[Dict] = []
         for m in matches:
             idx = m["idx"]
             checked = self._instance_selections.get(idx, True)
             self._instance_selections[idx] = checked
-            cb = pn.widgets.Checkbox(label=m["label"], value=checked, margin=(2, 8))
-            cb.param.watch(
-                lambda evt, i=idx: self._on_instance_toggle(i, evt.new),
-                ["value"],
-            )
-            self._instances_col.append(cb)
+            # Key encodes the test index (labels can collide); parsed back in
+            # _on_instance_event. idx is also stashed under ``data``.
+            source.append({
+                "title": m["label"],
+                "key": f"inst-{idx}",
+                "checkbox": True,
+                "selected": checked,
+                "data": {"idx": idx},
+            })
 
-    def _on_instance_toggle(self, idx: int, checked: bool) -> None:
-        if self._restoring:
+        self._instances_tree = Wunderbaum(
+            source=source,
+            columns=[{"id": "*", "title": "Instance", "width": "220px"}],
+            options={"checkbox": True, "selectMode": "multi"},
+            tree_event_callback=self._on_instance_event,
+        )
+        self._instances_card[0] = self._instances_tree
+
+    def _on_instance_event(self, event_name: str, params: Dict) -> None:
+        """Handle an instances-tree widget event; only ``select`` toggles a plot.
+
+        ``params`` is ``{"key", "flag"}``; ``key`` is ``inst-<idx>`` (see
+        :meth:`_refresh_instances`), so the toggled test index is recovered from
+        it and its plot state set to ``flag``.
+        """
+        if event_name != "select" or self._restoring:
             return
-        self._instance_selections[idx] = checked
+        key = params.get("key")
+        if not isinstance(key, str) or not key.startswith("inst-"):
+            return
+        try:
+            idx = int(key[len("inst-"):])
+        except ValueError:
+            return
+        self._instance_selections[idx] = bool(params.get("flag"))
         self._build_figure()
 
     # -- Tree selection ------------------------------------------------------

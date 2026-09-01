@@ -168,43 +168,43 @@ test_cell_a_formation = ElectrochemicalTest(
 )
 osw_obj.store_entity(test_cell_a_formation)
 test_cell_a_formation ="Item:OSW938e6a74e85a47b0b5a2a355e2ce6b94"
-
-# Cell B: AgingTestA + AgingTestB + Formation
-test_cell_b_aging_a = ElectrochemicalTest(
-    label=[Label(text="Cell B - Aging (A)")],
-    device_under_test=[cell_b],
-    test_procedure=test_procedure_aging_test_a,
-    output=_make_dataset("Cell B - Aging (A) Dataset"),
-)
-osw_obj.store_entity(test_cell_b_aging_a)
-test_cell_b_aging_a = "Item:OSW40d0053068a8495fbbe8526b20f4d7e9"
-
-test_cell_b_aging_b = ElectrochemicalTest(
-    label=[Label(text="Cell B - Aging (B)")],
-    device_under_test=[cell_b],
-    test_procedure=test_procedure_aging_test_b,
-    output=_make_dataset("Cell B - Aging (B) Dataset"),
-)
-osw_obj.store_entity(test_cell_b_aging_b)
-test_cell_b_aging_b = "Item:OSW30313ec0213a42eeb3033e24583cb0d4"
-
-test_cell_b_formation = ElectrochemicalTest(
-    label=[Label(text="Cell B - Formation")],
-    device_under_test=[cell_b],
-    test_procedure=test_procedure_formation_procedure,
-    output=_make_dataset("Cell B - Formation Dataset"),
-)
-osw_obj.store_entity(test_cell_b_formation)
-test_cell_b_formation = "Item:OSW1abc2aa549cf496c9a1c6bd3f5728717"
-# Cell C: Formation only
-test_cell_c_formation = ElectrochemicalTest(
-    label=[Label(text="Cell C - Formation")],
-    device_under_test=[cell_c],
-    test_procedure=test_procedure_formation_procedure,
-    output=_make_dataset("Cell C - Formation Dataset"),
-)
-osw_obj.store_entity(test_cell_c_formation)
-test_cell_c_formation = "Item:OSW2beded327c644d2e9cb2352a3f9eecac"
-
-
-
+#
+# # Cell B: AgingTestA + AgingTestB + Formation
+# test_cell_b_aging_a = ElectrochemicalTest(
+#     label=[Label(text="Cell B - Aging (A)")],
+#     device_under_test=[cell_b],
+#     test_procedure=test_procedure_aging_test_a,
+#     output=_make_dataset("Cell B - Aging (A) Dataset"),
+# )
+# osw_obj.store_entity(test_cell_b_aging_a)
+# test_cell_b_aging_a = "Item:OSW40d0053068a8495fbbe8526b20f4d7e9"
+#
+# test_cell_b_aging_b = ElectrochemicalTest(
+#     label=[Label(text="Cell B - Aging (B)")],
+#     device_under_test=[cell_b],
+#     test_procedure=test_procedure_aging_test_b,
+#     output=_make_dataset("Cell B - Aging (B) Dataset"),
+# )
+# osw_obj.store_entity(test_cell_b_aging_b)
+# test_cell_b_aging_b = "Item:OSW30313ec0213a42eeb3033e24583cb0d4"
+#
+# test_cell_b_formation = ElectrochemicalTest(
+#     label=[Label(text="Cell B - Formation")],
+#     device_under_test=[cell_b],
+#     test_procedure=test_procedure_formation_procedure,
+#     output=_make_dataset("Cell B - Formation Dataset"),
+# )
+# osw_obj.store_entity(test_cell_b_formation)
+# test_cell_b_formation = "Item:OSW1abc2aa549cf496c9a1c6bd3f5728717"
+# # Cell C: Formation only
+# test_cell_c_formation = ElectrochemicalTest(
+#     label=[Label(text="Cell C - Formation")],
+#     device_under_test=[cell_c],
+#     test_procedure=test_procedure_formation_procedure,
+#     output=_make_dataset("Cell C - Formation Dataset"),
+# )
+# osw_obj.store_entity(test_cell_c_formation)
+# test_cell_c_formation = "Item:OSW2beded327c644d2e9cb2352a3f9eecac"
+#
+#
+#
