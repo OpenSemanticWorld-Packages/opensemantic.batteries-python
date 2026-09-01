@@ -21,13 +21,17 @@ from pathlib import Path
 import panel as pn
 
 from battery_example_data import (
+    CyclingDataRow,
     CylindricalCell,
-    ElectrochemicalCyclingDataRow,
     ElectrochemicalCyclingDataset,
     ElectrochemicalTest,
 )
 from opensemantic.batteries import read_maccor
-from opensemantic.batteries.v1 import BatteryCell, ElectrochemicalTestProcedure
+from opensemantic.batteries.v1 import (
+    BatteryCell,
+    ElectrochemicalTestProcedure,
+    TestProcedureItem,
+)
 from opensemantic.batteries.view import (
     BatteryDataView,
     OOLDTreeBuilder,
@@ -52,43 +56,56 @@ SOURCE = (
 # Load the real data
 # ---------------------------------------------------------------------------
 
-# read_maccor returns a BatteryCyclingDataset whose rows are CyclingDataRow.
-# Its fields are the same v1 quantitative characteristics used by the dashboard's
-# ElectrochemicalCyclingDataRow, so we can hand the values straight across.
+# read_maccor returns a BatteryCyclingDataset whose rows are the *package's*
+# CyclingDataRow (opensemantic.batteries). Its fields are the same v1 quantitative
+# characteristics used by this example's CyclingDataRow (from battery_example_data),
+# so we can hand the values straight across.
 dataset = read_maccor(SOURCE)
 
-# Fields shared between CyclingDataRow (source) and ElectrochemicalCyclingDataRow
+# Fields shared between the Maccor source rows and the example's CyclingDataRow
 # (what the dashboard plots). Energy is dropped — the dashboard row has no such
 # field — but it is easy to add there if you want it on an axis.
 _SHARED_FIELDS = [
-    f for f in ElectrochemicalCyclingDataRow.__fields__ if f in dataset.rows[0].__fields__
+    f for f in CyclingDataRow.__fields__ if f in dataset.rows[0].__fields__
 ]
 
 
 def _to_dashboard_rows(rows):
-    """Copy each Maccor CyclingDataRow into an ElectrochemicalCyclingDataRow.
+    """Copy each Maccor source row into this example's CyclingDataRow.
 
     Both sides use the identical ``opensemantic.characteristics.quantitative.v1``
     characteristic classes, so the typed values pass through unchanged.
     """
     return [
-        ElectrochemicalCyclingDataRow(
+        CyclingDataRow(
             **{f: getattr(r, f) for f in _SHARED_FIELDS if getattr(r, f) is not None}
         )
         for r in rows
     ]
 
 
+# One generic procedure for this single measurement. A test links its
+# procedure(s) via ``test_procedure`` — a list of ``TestProcedureItem`` whose
+# ``test_procedure_instance`` is the procedure's OSW IRI (``obj.get_iri()``),
+# not the object. The dashboard resolves that IRI back through the
+# ``procedure_objects`` map built below.
+maccor_procedure = ElectrochemicalTestProcedure(
+    label=[Label(text="Maccor Cycling Procedure")]
+)
+
 test = ElectrochemicalTest(
     label=[Label(text="Maccor Export (024)")],
     device_under_test=[CylindricalCell(label=[Label(text="Maccor Test Cell")])],
-    protocol=ElectrochemicalTestProcedure(
-        label=[Label(text="Maccor Cycling Procedure")]
-    ),
-    output=ElectrochemicalCyclingDataset(
+    test_procedure=[
+        TestProcedureItem(
+            test_procedure_instance=maccor_procedure.get_iri(),
+            test_procedure_instance_property="Property:HasProcedure",
+        )
+    ],
+    output=[ElectrochemicalCyclingDataset(
         label=[Label(text=SOURCE.name)],
         data=_to_dashboard_rows(dataset.rows),
-    ),
+    )],
 )
 
 # ---------------------------------------------------------------------------
@@ -102,7 +119,7 @@ cell_builder = OOLDTreeBuilder(
 )
 
 procedure_builder = OOLDTreeBuilder(
-    source=PythonSource([test.protocol]),
+    source=PythonSource([maccor_procedure]),
     relations=[has_type()],
     ceiling=ElectrochemicalTestProcedure,
 )
