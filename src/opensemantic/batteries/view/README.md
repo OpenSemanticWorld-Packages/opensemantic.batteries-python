@@ -85,6 +85,15 @@ full-state and idempotent, so coalescing can't lose it. If you touch the
 selection path, drive it from `source` and keep the `tests/test_lazy_view.py`
 tests (they write `source` exactly as the browser does) green.
 
+The same single-slot coalescing bites two Python→JS channels, so the cascade
+works around both: (1) all `select_node` / `expand_node` calls for one change go
+out as a single atomic `batch_update` (`_tree_action` is one slot, so separate
+calls would collapse to the last); (2) selecting a category expands its subtree
+**one loaded node per echo round** — expanding several unloaded lazy nodes at
+once would fire multiple lazy-load requests through the single `_lazy_request`
+slot and load only the last. Expanding one loaded node reveals its (loaded)
+children, which the next `source` echo expands, serialising the lazy loads.
+
 ## Quick start
 
 A runnable version is in [`examples/battery_dashboard.py`](../../../../examples/battery_dashboard.py).

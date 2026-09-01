@@ -138,6 +138,20 @@ def test_instance_level_toggle_via_source(view):
     assert [m["label"] for m in view._matching_tests()] == ["Cell A - Formation"]
 
 
+def test_category_select_issues_expand_and_select_batch(view):
+    # Ticking a category must push a single atomic batch to the browser that
+    # both expands the subtree (so the cascade becomes visible) and ticks every
+    # descendant — issuing these as separate actions would coalesce to one.
+    _tick_cell_category(view, selected=True)
+    action = view._cell_tree._tree_action
+    assert action.get("action") == "batch"
+    ops = action["payload"]
+    assert {"action": "expandNode", "key": "Category:CylindricalCell",
+            "expanded": True} in ops
+    assert {"action": "selectNode", "key": "Item:CellA", "selected": True} in ops
+    assert {"action": "selectNode", "key": "Item:CellB", "selected": True} in ops
+
+
 def test_no_selection_lists_nothing(view):
     assert view._matching_tests() == []
     assert _instance_labels(view) == []

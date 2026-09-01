@@ -22,7 +22,7 @@ change here. See :mod:`opensemantic.batteries.view._backend`.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import panel as pn
 from panelini.panels.wunderbaum import Wunderbaum
@@ -77,9 +77,9 @@ class LazyBatteryDataView(BatteryDataView):
         # key -> "class" | "instance", learned as nodes are built or walked, so a
         # source diff (which yields only keys) can tell the two apart.
         self._node_kind: Dict[str, str] = {}
-        # class IRI -> flat list of all descendant instance IRIs (memoised; the
-        # recursive backend walk is the expensive part of a cascade).
-        self._descendant_cache: Dict[str, List[str]] = {}
+        # class IRI -> (descendant class IRIs, descendant instance IRIs), memoised;
+        # the recursive backend walk is the expensive part of a cascade.
+        self._descendant_cache: Dict[str, Tuple[List[str], List[str]]] = {}
         # Per-tree set of node keys currently ticked *in the browser* (i.e. present
         # with ``selected: true`` in the serialised ``source``). Diffing this on
         # every ``source`` change is how a user toggle is detected — see
@@ -90,6 +90,11 @@ class LazyBatteryDataView(BatteryDataView):
         # only the last (``activate``) reaches Python — the ``select`` is dropped.
         # ``source`` is full-state and idempotent, so coalescing can't lose it.
         self._source_selected: Dict[str, Set[str]] = {"cell": set(), "proc": set()}
+        # Categories already expand-requested in the browser, per tree. The
+        # cascade expands one *loaded* category per echo round (see
+        # :meth:`_queue_expansion`); this tracks which are done so it advances
+        # through the subtree instead of re-expanding the same node forever.
+        self._expanded_classes: Dict[str, Set[str]] = {"cell": set(), "proc": set()}
 
         super().__init__(
             tests=[],
@@ -233,80 +238,137 @@ class LazyBatteryDataView(BatteryDataView):
         if self._restoring:
             return
         new_sel: Set[str] = set()
-        self._collect_selected(event.new or [], new_sel)
+        present: Set[str] = set()
+        self._collect_selected(event.new or [], new_sel, present)
         old_sel = self._source_selected[which]
-        if new_sel == old_sel:
-            return
-        self._source_selected[which] = new_sel
 
-        changed = self._toggle_keys(which, new_sel - old_sel, True)
-        changed |= self._toggle_keys(which, old_sel - new_sel, False)
+        # Accumulate every browser-side action for this change into one list and
+        # issue a *single* ``batch_update``: the widget's ``_tree_action`` is a
+        # single param, so back-to-back ``select_node`` / ``expand_node`` calls
+        # in one callback would coalesce to only the last (the same Bokeh
+        # same-tick collapse that drops ``select`` events). One batch is atomic.
+        actions: List[Dict] = []
+        changed = False
+        if new_sel != old_sel:
+            self._source_selected[which] = new_sel
+            changed = self._toggle_keys(which, new_sel - old_sel, True, actions)
+            changed |= self._toggle_keys(which, old_sel - new_sel, False, actions)
+
+        # Reveal the cascade by expanding selected categories — but only ones
+        # already *loaded* in the browser (present in ``source``), and only
+        # **one** per round. Expanding an unloaded lazy node fires a lazy-load
+        # request through the single ``_lazy_request`` slot; expanding several at
+        # once would coalesce those requests and load only the last. Expanding
+        # one loaded node reveals its (loaded) children, which the next echo
+        # round then expands — serialising the lazy loads so none is dropped.
+        self._queue_expansion(which, present, actions)
+
+        if actions:
+            self._tree(which).batch_update(actions)
 
         # Only re-query when the authoritative instance set actually moved. A
-        # cascade's own ``select_node`` calls echo back through ``source``; those
-        # rounds re-toggle instances already in the set (idempotent), so skipping
-        # the requery there stops a feedback loop without losing any change.
+        # cascade's own actions echo back through ``source``; those follow-up
+        # rounds re-toggle nodes already in the set (idempotent), so skipping the
+        # requery there stops a feedback loop without losing any change.
         if changed:
             self._apply_selection()
 
-    def _collect_selected(self, nodes: List[Dict], acc: Set[str]) -> None:
-        """Recursively gather ``selected`` node keys from a serialised source.
+    def _queue_expansion(
+        self, which: str, present: Set[str], actions: List[Dict]
+    ) -> None:
+        """Append an ``expandNode`` for one not-yet-expanded, loaded category."""
+        for iri in self._sel_classes[which]:
+            if iri in present and iri not in self._expanded_classes[which]:
+                self._expanded_classes[which].add(iri)
+                actions.append(
+                    {"action": "expandNode", "key": iri, "expanded": True}
+                )
+                return
+
+    def _collect_selected(
+        self, nodes: List[Dict], selected: Set[str], present: Set[str]
+    ) -> None:
+        """Gather each node's key into ``present`` and ``selected`` keys too.
 
         Also records each visited node's ``kind`` (``getSerializableSource``
         spreads a node's ``data`` — which carries ``kind`` — onto the node) so a
         toggled key can be routed as class vs instance without a separate lookup.
+        ``present`` (every key in the tree, loaded or not) tells the expansion
+        queue which categories the browser has actually materialised.
         """
         for node in nodes:
             key = node.get("key")
             if key:
+                present.add(key)
                 kind = node.get("kind") or (node.get("data") or {}).get("kind")
                 if kind:
                     self._node_kind[key] = kind
                 if node.get("selected"):
-                    acc.add(key)
+                    selected.add(key)
             children = node.get("children")
             if children:
-                self._collect_selected(children, acc)
+                self._collect_selected(children, selected, present)
 
-    def _toggle_keys(self, which: str, keys: Set[str], flag: bool) -> bool:
-        """Apply a set of just-(de)selected keys; return whether instances moved.
+    def _toggle_keys(
+        self, which: str, keys: Set[str], flag: bool, actions: List[Dict]
+    ) -> bool:
+        """Apply a set of just-(de)selected keys, appending browser actions.
 
-        A class key cascades into every descendant instance (loading the subtree
-        server-side) and best-effort-syncs any *already loaded* descendant
-        checkbox in the browser; an instance key flips itself. Returns True iff
-        this tree's authoritative instance set changed.
+        A class key cascades into every descendant category *and* instance
+        (loading the subtree server-side); the sets are updated authoritatively
+        and ``actions`` gets a ``selectNode`` per descendant so already-loaded
+        checkboxes flip live (unloaded ones render from the sets when their
+        subtree is later expanded — see :meth:`_wb_node`). Revealing the subtree
+        by expansion is handled separately, one node per round, in
+        :meth:`_queue_expansion`. An instance key just flips itself. Returns True
+        iff this tree's authoritative instance set changed.
         """
         if not keys:
             return False
         instances = self._sel_instances[which]
         classes = self._sel_classes[which]
-        tree = self._tree(which)
+        expanded = self._expanded_classes[which]
         before = set(instances)
         for key in keys:
             if self._node_kind.get(key, "instance") == "class":
                 (classes.add if flag else classes.discard)(key)
-                for iri in self._descendant_instance_iris(key):
+                sub_classes, sub_instances = self._descendants(key)
+                for iri in sub_instances:
                     (instances.add if flag else instances.discard)(iri)
-                    # Visual sync of already-loaded descendant checkboxes; a no-op
-                    # for keys the browser hasn't loaded (those render from the
-                    # set when their subtree is later expanded).
-                    tree.select_node(iri, flag)
+                    actions.append(
+                        {"action": "selectNode", "key": iri, "selected": flag}
+                    )
+                for iri in sub_classes:
+                    (classes.add if flag else classes.discard)(iri)
+                    actions.append(
+                        {"action": "selectNode", "key": iri, "selected": flag}
+                    )
+                if not flag:
+                    # Forget expansions so re-selecting re-reveals the subtree.
+                    expanded.discard(key)
+                    expanded.difference_update(sub_classes)
             else:
                 (instances.add if flag else instances.discard)(key)
         return instances != before
 
     def _descendant_instance_iris(self, class_iri: str) -> List[str]:
-        """All instance IRIs anywhere below a category, loading the subtree.
+        """All instance IRIs anywhere below a category (see :meth:`_descendants`)."""
+        return self._descendants(class_iri)[1]
+
+    def _descendants(self, class_iri: str) -> Tuple[List[str], List[str]]:
+        """``(sub_class_iris, instance_iris)`` anywhere below a category.
 
         Recursively calls the backend's ``children`` (forcing the lazy load
-        server-side rather than waiting on the browser) and collects every
-        ``instance`` leaf. Memoised per category; also records each visited
-        node's kind in :attr:`_node_kind`.
+        server-side rather than waiting on the browser), collecting every
+        descendant *category* IRI (so the cascade can expand them) and every
+        *instance* leaf IRI (so the cascade can select them). Memoised per
+        category; also records each visited node's kind in :attr:`_node_kind`.
         """
         if class_iri in self._descendant_cache:
             return self._descendant_cache[class_iri]
 
-        found: List[str] = []
+        sub_classes: List[str] = []
+        instances: List[str] = []
         seen: Set[str] = set()
 
         def walk(iri: str) -> None:
@@ -316,13 +378,14 @@ class LazyBatteryDataView(BatteryDataView):
                 seen.add(child.iri)
                 self._node_kind[child.iri] = child.kind
                 if child.kind == "instance":
-                    found.append(child.iri)
+                    instances.append(child.iri)
                 else:
+                    sub_classes.append(child.iri)
                     walk(child.iri)
 
         walk(class_iri)
-        self._descendant_cache[class_iri] = found
-        return found
+        self._descendant_cache[class_iri] = (sub_classes, instances)
+        return self._descendant_cache[class_iri]
 
     def _apply_selection(self) -> None:
         """Push the selection sets into the query and re-plot."""
@@ -386,6 +449,7 @@ class LazyBatteryDataView(BatteryDataView):
             # Forget the browser's last-seen ticks too, so the next real toggle
             # diffs against a clean slate rather than the pre-restore selection.
             self._source_selected = {"cell": set(), "proc": set()}
+            self._expanded_classes = {"cell": set(), "proc": set()}
             self._selected_cell_ids = list(state.cell_ids)
             self._selected_proc_ids = list(state.proc_ids)
             self._instance_selections = dict(state.instance_selections)
