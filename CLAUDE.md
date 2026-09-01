@@ -123,5 +123,6 @@ from the `world.opensemantic.batteries` schema package.
 - A test links its procedure(s) via `test_procedure` — a list of
   `TestProcedureItem` whose `test_procedure_instance` is the procedure's OSW IRI
   string (`obj.get_iri()`), **not** the object. `BatteryDataView` resolves those
-  IRIs back through `procedure_objects`; a single `.protocol` object still works
-  as a legacy fallback (Maccor example).
+  IRIs back through `procedure_objects` (a single `.protocol` object is still
+  accepted as a legacy fallback). Its `output` is a **list** of datasets; the
+  dashboard plots the first one's `.data`.

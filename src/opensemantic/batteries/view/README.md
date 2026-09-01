@@ -101,9 +101,11 @@ Each item in `tests` must expose:
   `.test_procedure_instance` is the procedure's OSW IRI string; the view
   resolves those back to procedure objects via `procedure_objects`.
   (Legacy: a single `.protocol` procedure object is still accepted as a
-  fallback — used by the Maccor example.)
-- `.output.data` — list of row objects (each a `QuantityValue`-typed
-  characteristic per field: `test_time`, `voltage`, `current`, …)
+  fallback.)
+- `.output` — a **list** of datasets (or a single dataset object); the view
+  plots the first one's `.data` — a list of row objects (each a
+  `QuantityValue`-typed characteristic per field: `test_time`, `voltage`,
+  `current`, …)
 
 The cell/procedure `*_nodes`/`*_edges`/`*_objects` come straight from an
 `OOLDTreeBuilder` (`build_nodes()`, `build_edges()`, `get_object_map()`).

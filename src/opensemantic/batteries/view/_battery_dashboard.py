@@ -128,7 +128,8 @@ class BatteryDataView(BaseDataView):
           .test_procedure     list of TestProcedureItem, each carrying a
                               ``test_procedure_instance`` OSW IRI string
                               (legacy: a single ``.protocol`` procedure object)
-          .output.data        list of row objects (ElectrochemicalCyclingDataRow)
+          .output             dataset (or list of datasets); the first one's
+                              ``.data`` is the list of rows (CyclingDataRow)
     cell_nodes / cell_edges
         OO-LD graph for the cell class hierarchy + instances.
     cell_objects
@@ -238,7 +239,7 @@ class BatteryDataView(BaseDataView):
     @staticmethod
     def _detect_fields(tests: List[Any]) -> List[str]:
         for test in tests:
-            output = getattr(test, "output", None)
+            output = BatteryDataView._test_output(test)
             rows = getattr(output, "data", []) if output else []
             if not rows:
                 continue
@@ -260,7 +261,7 @@ class BatteryDataView(BaseDataView):
         """
         channels: Dict[str, _FieldChannel] = {}
         for test in tests:
-            output = getattr(test, "output", None)
+            output = BatteryDataView._test_output(test)
             rows = getattr(output, "data", []) if output else []
             for row in rows:
                 for f in field_names:
@@ -525,7 +526,7 @@ class BatteryDataView(BaseDataView):
 
     def _test_label(self, test: Any) -> str:
         """Display label for an instance — the output dataset's, else the test's."""
-        output = getattr(test, "output", None)
+        output = self._test_output(test)
         if output is not None and getattr(output, "label", None):
             return self._obj_label(output)
         return self._obj_label(test)
@@ -537,7 +538,7 @@ class BatteryDataView(BaseDataView):
                 continue
             test = m["test"]
             dut: List[Any] = getattr(test, "device_under_test", []) or []
-            output = getattr(test, "output", None)
+            output = self._test_output(test)
             rows: List[Any] = getattr(output, "data", []) if output else []
             cell_labels = [self._obj_label(c) for c in dut]
             proc_label = self._proc_label(test)
@@ -601,6 +602,19 @@ class BatteryDataView(BaseDataView):
         if uuid_a is not None and uuid_b is not None and uuid_a == uuid_b:
             return True
         return BatteryDataView._obj_label(a) == BatteryDataView._obj_label(b)
+
+    @staticmethod
+    def _test_output(test: Any) -> Any:
+        """The test's output dataset.
+
+        The generated ``ElectrochemicalTest`` carries ``output`` as a *list* of
+        datasets; older/hand-written tests (the Maccor example) pass a single
+        dataset object. Return the first dataset in either case, or ``None``.
+        """
+        output = getattr(test, "output", None)
+        if isinstance(output, (list, tuple)):
+            return output[0] if output else None
+        return output
 
     @staticmethod
     def _obj_iri(obj: Any) -> Optional[str]:

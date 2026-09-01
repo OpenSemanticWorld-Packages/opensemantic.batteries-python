@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID, uuid4
 
 from opensemantic.base.v1 import (
@@ -1223,11 +1224,8 @@ class TesterItem(OswBaseModel):
         range="Category:OSW69729530f3ca4addaf8dd95ea3781607",
     )
 
-
 class TestProcedureItem(OswBaseModel):
-    class Config:
-        schema_extra = {}
-
+    uuid: UUID = Field(default_factory=uuid4, options={"hidden": True}, title="UUID")
     test_procedure_subcategory: ElectrochemicalTestProcedure | None = Field(
         None,
         options={
@@ -1237,6 +1235,15 @@ class TestProcedureItem(OswBaseModel):
         },
         range="Category:OSWdda41d4a4ec0421babe0295c6edcb5df",
     )
+    """
+    Select Subcategory first to get more precise results.
+    """
+    test_procedure_instance: str | None = Field(None, title="Instance")
+    """
+    Select or create an appropiate test procedure.
+    """
+    test_procedure_instance_property: str | None = "Property:HasProcedure"
+
 
 
 class ElectrochemicalEnergyStorageDevice(PhysicalItem):
