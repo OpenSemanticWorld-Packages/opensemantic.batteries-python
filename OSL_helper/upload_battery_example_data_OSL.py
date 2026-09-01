@@ -140,7 +140,7 @@ def _make_dataset(name: str) -> List[ElectrochemicalCyclingDataset]:
         label=[Label(text=name)],
         data=_sample_cycling_data(),
     )
-    osw_obj.store_entity(dataset)
+    # osw_obj.store_entity(dataset)
     return [dataset]
 
 
@@ -149,25 +149,26 @@ def _make_dataset(name: str) -> List[ElectrochemicalCyclingDataset]:
 # ---------------------------------------------------------------------------
 
 # Cell A: AgingTestA + Formation
-# test_cell_a_aging_a = ElectrochemicalTest(
-#     label=[Label(text="Cell A - Aging (A)")],
-#     device_under_test=[cell_a],
-#     test_procedure=test_procedure_aging_test_a,
-#     output=_make_dataset("Cell A - Aging (A) Dataset"),
-# )
-#
-#
-# test_cell_a_aging_a = "Item:OSW3b8adbb8c9ce4ac7ae89d30de43a1d05"
-
-
-test_cell_a_formation = ElectrochemicalTest(
-    label=[Label(text="Cell A - Formation")],
+test_cell_a_aging_a = ElectrochemicalTest(
+    label=[Label(text="Cell A - Aging (A)")],
     device_under_test=[cell_a],
-    test_procedure=test_procedure_formation_procedure,
-    output=_make_dataset("Cell A - Formation Dataset"),
+    test_procedure=test_procedure_aging_test_a,
+    output=_make_dataset("Cell A - Aging (A) Dataset"),
 )
-osw_obj.store_entity(test_cell_a_formation)
-test_cell_a_formation ="Item:OSW938e6a74e85a47b0b5a2a355e2ce6b94"
+# osw_obj.store_entity(test_cell_a_aging_a)
+
+test_cell_a_aging_a = "Item:OSW3b8adbb8c9ce4ac7ae89d30de43a1d05"
+# test_cell_a_aging_a = "Item:OSW72d4c22611014a8fbf542481e69f4ea6" # recreate
+
+#
+# test_cell_a_formation = ElectrochemicalTest(
+#     label=[Label(text="Cell A - Formation")],
+#     device_under_test=[cell_a],
+#     test_procedure=test_procedure_formation_procedure,
+#     output=_make_dataset("Cell A - Formation Dataset"),
+# )
+# osw_obj.store_entity(test_cell_a_formation)
+# test_cell_a_formation ="Item:OSW938e6a74e85a47b0b5a2a355e2ce6b94"
 #
 # # Cell B: AgingTestA + AgingTestB + Formation
 # test_cell_b_aging_a = ElectrochemicalTest(

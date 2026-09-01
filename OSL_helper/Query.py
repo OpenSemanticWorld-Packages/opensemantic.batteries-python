@@ -48,6 +48,8 @@ test_query = (f"[[-HasOutput.HasSchema::Category:OSW6f39d77241e24a33ab6d036dfac0
 
 
 
+test_query = (f"[[HasProcedure::Item:OSW365966aaa8d64804b5ff0351c9db5382]]")
+
 
 results = osw_obj.site.semantic_search(
     osw_obj.site.SearchParam(query=(test_query), debug = False)
@@ -56,19 +58,6 @@ results = osw_obj.site.semantic_search(
 
 print(results)
 
-# for r in results:
-#     # entity = osw_obj.load_entity(r)
-#     # print(f"'{entity.name}' : '{r}',")
-#     # print(r)
-#     try:
-#         name = osw_obj.site.get_page_content([r]).contents[r]["jsondata"]["name"]
-#         print(f"'{name}' : '{r}',")
-#         jsondata = osw_obj.site.get_page_content([r]).contents[r]["jsondata"]
-#         print(jsondata)
-#     except:
-#         pass
-
-
 for r in results:
     # entity = osw_obj.load_entity(r)
     # print(f"'{entity.name}' : '{r}',")
@@ -76,11 +65,24 @@ for r in results:
     try:
         name = osw_obj.site.get_page_content([r]).contents[r]["jsondata"]["name"]
         print(f"'{name}' : '{r}',")
-        entity = osw_obj.load_entity(r)
-        data = entity.data
-        print(data)
-
+        jsondata = osw_obj.site.get_page_content([r]).contents[r]["jsondata"]
+        print(jsondata)
     except:
         pass
+
+
+# for r in results:
+#     # entity = osw_obj.load_entity(r)
+#     # print(f"'{entity.name}' : '{r}',")
+#     # print(r)
+#     try:
+#         name = osw_obj.site.get_page_content([r]).contents[r]["jsondata"]["name"]
+#         print(f"'{name}' : '{r}',")
+#         entity = osw_obj.load_entity(r)
+#         data = entity.data
+#         print(data)
+#
+#     except:
+#         pass
 
 
