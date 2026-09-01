@@ -125,7 +125,9 @@ class BatteryDataView(BaseDataView):
     tests
         List of test-run objects. Each must expose:
           .device_under_test  list of cell objects
-          .protocol           procedure object
+          .test_procedure     list of TestProcedureItem, each carrying a
+                              ``test_procedure_instance`` OSW IRI string
+                              (legacy: a single ``.protocol`` procedure object)
           .output.data        list of row objects (ElectrochemicalCyclingDataRow)
     cell_nodes / cell_edges
         OO-LD graph for the cell class hierarchy + instances.
@@ -507,12 +509,16 @@ class BatteryDataView(BaseDataView):
         if not selected_cells or not selected_procs:
             return []
 
+        selected_proc_iris = {
+            self._obj_iri(p) for p in selected_procs
+        }
+        selected_proc_iris.discard(None)
+
         matches = []
         for idx, test in enumerate(self._tests):
             dut: List[Any] = getattr(test, "device_under_test", []) or []
-            proto: Any = getattr(test, "protocol", None)
             cell_match = any(self._same_object(c, t) for c in selected_cells for t in dut)
-            proc_match = any(self._same_object(p, proto) for p in selected_procs)
+            proc_match = bool(self._test_proc_iris(test) & selected_proc_iris)
             if cell_match and proc_match:
                 matches.append({"idx": idx, "test": test, "label": self._test_label(test)})
         return matches
@@ -531,15 +537,58 @@ class BatteryDataView(BaseDataView):
                 continue
             test = m["test"]
             dut: List[Any] = getattr(test, "device_under_test", []) or []
-            proto: Any = getattr(test, "protocol", None)
             output = getattr(test, "output", None)
             rows: List[Any] = getattr(output, "data", []) if output else []
             cell_labels = [self._obj_label(c) for c in dut]
+            proc_label = self._proc_label(test)
             traces.append({
-                "label": f"{'/'.join(cell_labels)} — {self._obj_label(proto)}",
+                "label": f"{'/'.join(cell_labels)} — {proc_label}",
                 "rows": rows,
             })
         return traces
+
+    def _proc_by_iri(self) -> Dict[str, Any]:
+        """Map procedure IRI -> procedure object, cached from ``procedure_objects``."""
+        cache = getattr(self, "_proc_by_iri_cache", None)
+        if cache is None:
+            cache = {}
+            for obj in self._procedure_objects.values():
+                iri = self._obj_iri(obj)
+                if iri:
+                    cache[iri] = obj
+            self._proc_by_iri_cache = cache
+        return cache
+
+    def _test_proc_iris(self, test: Any) -> set:
+        """Procedure instance IRIs a test is linked to.
+
+        The current linkage is ``test.test_procedure`` — a list of
+        ``TestProcedureItem`` whose ``test_procedure_instance`` is an OSW IRI
+        string. The legacy single ``test.protocol`` object (still used by the
+        Maccor example) is folded in via its own ``get_iri()``.
+        """
+        iris = set()
+        for item in getattr(test, "test_procedure", None) or []:
+            inst = getattr(item, "test_procedure_instance", None)
+            if isinstance(inst, str) and inst:
+                iris.add(inst)
+            elif inst is not None:
+                iris.add(self._obj_iri(inst))
+        proto = getattr(test, "protocol", None)
+        if proto is not None:
+            iris.add(self._obj_iri(proto))
+        iris.discard(None)
+        return iris
+
+    def _proc_label(self, test: Any) -> str:
+        """Display name(s) of a test's procedure(s), resolved from its IRIs."""
+        by_iri = self._proc_by_iri()
+        names = [
+            self._obj_label(by_iri[iri])
+            for iri in self._test_proc_iris(test)
+            if iri in by_iri
+        ]
+        return "/".join(names) if names else "?"
 
     @staticmethod
     def _same_object(a: Any, b: Any) -> bool:
@@ -552,6 +601,17 @@ class BatteryDataView(BaseDataView):
         if uuid_a is not None and uuid_b is not None and uuid_a == uuid_b:
             return True
         return BatteryDataView._obj_label(a) == BatteryDataView._obj_label(b)
+
+    @staticmethod
+    def _obj_iri(obj: Any) -> Optional[str]:
+        """OSW instance IRI (``Item:OSW…``) of an object, if it exposes one."""
+        getter = getattr(obj, "get_iri", None)
+        if callable(getter):
+            try:
+                return getter()
+            except Exception:
+                return None
+        return None
 
     @staticmethod
     def _obj_label(obj: Any) -> str:
