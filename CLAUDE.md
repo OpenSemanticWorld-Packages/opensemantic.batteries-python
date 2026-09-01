@@ -85,6 +85,11 @@ tests/
 .venv/Scripts/python.exe -m pytest
 # or via tox
 tox
+
+# demo GIFs (Playwright drives panel serve, frames -> imageio GIF in docs/media/)
+.venv/Scripts/python.exe -m pip install -e ".[docs]" && playwright install chromium
+.venv/Scripts/python.exe docs/media/generate_battery_dashboard.py        # synthetic
+.venv/Scripts/python.exe docs/media/generate_battery_dashboard_maccor.py  # Maccor
 ```
 
 Examples import their sample data from `examples/battery_example_data.py`
@@ -115,3 +120,8 @@ from the `world.opensemantic.batteries` schema package.
 - Prefer importing existing generated classes (e.g. `BatteryCell`,
   `AgingTestProcedure`, `FormationTestProcedure`,
   `ElectrochemicalTestProcedure`) over redefining them in examples.
+- A test links its procedure(s) via `test_procedure` — a list of
+  `TestProcedureItem` whose `test_procedure_instance` is the procedure's OSW IRI
+  string (`obj.get_iri()`), **not** the object. `BatteryDataView` resolves those
+  IRIs back through `procedure_objects`; a single `.protocol` object still works
+  as a legacy fallback (Maccor example).

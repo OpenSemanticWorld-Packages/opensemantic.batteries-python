@@ -97,7 +97,11 @@ cards and — crucially — the `_numeric()` unit-conversion path.
 Each item in `tests` must expose:
 
 - `.device_under_test` — list of cell objects
-- `.protocol` — the procedure object
+- `.test_procedure` — list of `TestProcedureItem`, each whose
+  `.test_procedure_instance` is the procedure's OSW IRI string; the view
+  resolves those back to procedure objects via `procedure_objects`.
+  (Legacy: a single `.protocol` procedure object is still accepted as a
+  fallback — used by the Maccor example.)
 - `.output.data` — list of row objects (each a `QuantityValue`-typed
   characteristic per field: `test_time`, `voltage`, `current`, …)
 

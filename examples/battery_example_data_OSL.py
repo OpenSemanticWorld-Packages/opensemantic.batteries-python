@@ -11,12 +11,11 @@ import random
 
 from typing import List, Optional
 
-
 from opensemantic.batteries.v1 import (
     AgingTestProcedure,
     BatteryCell,
     ElectrochemicalTestProcedure,
-    FormationTestProcedure, TestProcedureItem,
+    FormationTestProcedure,
 )
 from opensemantic.characteristics.quantitative.v1 import (
     Characteristic,
@@ -57,18 +56,10 @@ class ElectrochemicalTest(AnalyticalLaboratoryProcess):
     """One run of an electrochemical test on one or more cells.
 
     device_under_test  inherited from AnalyticalLaboratoryProcess
-    test_procedure     the procedure(s) followed, as ``TestProcedureItem``
-                       wrappers whose ``test_procedure_instance`` is the
-                       procedure's OSW IRI (see the ``test_procedure_*`` lists)
-    protocol           legacy single-procedure link (still used by the Maccor
-                       example); kept so both linkage styles work
+    protocol           the procedure instance followed (AgingTestProcedure, …)
     output             the resulting cycling dataset
-
-    ``test_procedure`` overrides the ``List[Procedure]`` field inherited from
-    ``AnalyticalLaboratoryProcess`` so it accepts battery ``TestProcedureItem``s.
     """
     protocol: Optional[ElectrochemicalTestProcedure] = None
-    test_procedure: Optional[List[TestProcedureItem]] = None
     output: Optional[ElectrochemicalCyclingDataset] = None
 
 
@@ -149,25 +140,6 @@ aging_test_b = AgingTestProcedure(label=[Label(text="Aging Test B")])
 formation_procedure = FormationTestProcedure(label=[Label(text="Formation Test")])
 
 
-# ``TestProcedureItem.test_procedure_instance`` is a string instance reference
-# (an OSW IRI like ``Item:OSW…``), not the procedure object — so link each
-# procedure by its ``get_iri()``. The dashboard resolves the IRI back to the
-# procedure object via its procedure_objects map (see BatteryDataView).
-test_procedure_aging_test_a = [TestProcedureItem(test_procedure_subcategory= "Category:OSWdda41d4a4ec0421babe0295c6edcb5df",
-                            test_procedure_instance= aging_test_a.get_iri(),
-                            test_procedure_instance_property = "Property:HasProcedure")]
-
-
-test_procedure_aging_test_b = [TestProcedureItem(test_procedure_subcategory= "Category:OSWdda41d4a4ec0421babe0295c6edcb5df",
-                            test_procedure_instance= aging_test_b.get_iri(),
-                            test_procedure_instance_property = "Property:HasProcedure")]
-
-
-test_procedure_formation_procedure = [TestProcedureItem(test_procedure_subcategory= "Category:OSWdda41d4a4ec0421babe0295c6edcb5df",
-                            test_procedure_instance= formation_procedure.get_iri(),
-                            test_procedure_instance_property = "Property:HasProcedure")]
-
-
 # ---------------------------------------------------------------------------
 # Test runs
 # ---------------------------------------------------------------------------
@@ -176,14 +148,14 @@ test_procedure_formation_procedure = [TestProcedureItem(test_procedure_subcatego
 test_cell_a_aging_a = ElectrochemicalTest(
     label=[Label(text="Cell A - Aging (A)")],
     device_under_test=[cell_a],
-    test_procedure=test_procedure_aging_test_a,
+    protocol=aging_test_a,
     output=_make_dataset("Cell A - Aging (A) Dataset"),
 )
 
 test_cell_a_formation = ElectrochemicalTest(
     label=[Label(text="Cell A - Formation")],
     device_under_test=[cell_a],
-    test_procedure=test_procedure_formation_procedure,
+    protocol=formation_procedure,
     output=_make_dataset("Cell A - Formation Dataset"),
 )
 
@@ -191,21 +163,21 @@ test_cell_a_formation = ElectrochemicalTest(
 test_cell_b_aging_a = ElectrochemicalTest(
     label=[Label(text="Cell B - Aging (A)")],
     device_under_test=[cell_b],
-    test_procedure=test_procedure_aging_test_a,
+    protocol=aging_test_a,
     output=_make_dataset("Cell B - Aging (A) Dataset"),
 )
 
 test_cell_b_aging_b = ElectrochemicalTest(
     label=[Label(text="Cell B - Aging (B)")],
     device_under_test=[cell_b],
-    test_procedure=test_procedure_aging_test_b,
+    protocol=aging_test_b,
     output=_make_dataset("Cell B - Aging (B) Dataset"),
 )
 
 test_cell_b_formation = ElectrochemicalTest(
     label=[Label(text="Cell B - Formation")],
     device_under_test=[cell_b],
-    test_procedure=test_procedure_formation_procedure,
+    protocol=formation_procedure,
     output=_make_dataset("Cell B - Formation Dataset"),
 )
 
@@ -213,6 +185,6 @@ test_cell_b_formation = ElectrochemicalTest(
 test_cell_c_formation = ElectrochemicalTest(
     label=[Label(text="Cell C - Formation")],
     device_under_test=[cell_c],
-    test_procedure=test_procedure_formation_procedure,
+    protocol=formation_procedure,
     output=_make_dataset("Cell C - Formation Dataset"),
 )
