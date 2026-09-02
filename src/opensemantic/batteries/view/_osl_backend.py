@@ -14,13 +14,25 @@ hand-copied OSW ids. The dataset query uses the *inverse-output* path (a page
 that is the ``HasOutput`` of a matching test), so each result is a cycling
 dataset whose rows come straight from ``osw_obj.load_entity(<title>).data``.
 
-``osw`` is imported lazily (only :func:`connect_osw` needs it), so importing
-this module — and the whole ``view`` package — never requires the optional
-``osw`` dependency. Install it with the ``osl`` extra to actually connect.
+A cycling dataset can carry its rows in one of two ways, both handled by
+:meth:`OSLBatteryBackend._entity_rows`:
+
+* **inline** — rows live in the dataset's ``data`` attribute (small datasets), or
+* **out-of-band** — for large datasets the rows are split into a WikiFile and
+  ``data`` is cleared; the file is referenced from the dataset's first
+  ``Distribution`` (``distributions[0].download_url``, a full wiki file URL). The
+  backend downloads that file, parses its bare ``data`` array and rebuilds the
+  rows in memory (the reverse of ``OSL_helper/upload_battery_large_data_OSL.py``).
+
+``osw`` is imported lazily (only :func:`connect_osw` and the out-of-band download
+path need it), so importing this module — and the whole ``view`` package — never
+requires the optional ``osw`` dependency. Install it with the ``osl`` extra to
+actually connect.
 """
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, List, Optional, Set, Union
 
@@ -293,6 +305,11 @@ class OSLBatteryBackend(BatteryDataBackend):
         data = getattr(entity, "data", None)
         if data:
             return list(data)
+        # Large-dataset path: the inline ``data`` was cleared and the rows split
+        # into a WikiFile referenced from a Distribution. Download and rebuild.
+        rows = self._rows_from_distributions(entity)
+        if rows:
+            return rows
         outputs = getattr(entity, "output", None) or []
         if not isinstance(outputs, (list, tuple)):
             outputs = [outputs]
@@ -309,3 +326,65 @@ class OSLBatteryBackend(BatteryDataBackend):
             if d:
                 rows.extend(d)
         return rows
+
+    # -- Out-of-band (large-dataset) row loading -----------------------------
+
+    def _rows_from_distributions(self, entity: Any) -> List[Any]:
+        """Rebuild rows from a dataset whose ``data`` was split into a WikiFile.
+
+        The upload script (``OSL_helper/upload_battery_large_data_OSL.py``) writes
+        the bare ``data`` array to a WikiFile and stores a full wiki file URL in
+        the dataset's first ``Distribution`` (``download_url``). Here we do the
+        reverse: download the file, parse the array and coerce every entry back
+        into a typed :class:`CyclingDataRow` (same type as the inline path).
+        """
+        distributions = getattr(entity, "distributions", None) or []
+        if not distributions or self._osw is None:
+            return []
+        for dist in distributions:
+            url = getattr(dist, "download_url", None)
+            if not url:
+                continue
+            try:
+                array = self._download_data_array(url)
+            except Exception as exc:  # noqa: BLE001 — degrade to empty rows
+                print(
+                    f"[opensemantic.batteries.view] download {url!r} failed: {exc}"
+                )
+                continue
+            rows = self._rows_from_array(array)
+            if rows:
+                return rows
+        return []
+
+    def _download_data_array(self, url: str) -> List[Any]:
+        """Download the WikiFile at ``url`` and return its ``data`` array.
+
+        The file holds the bare array written by the upload script, but a full
+        dataset dict (``{"data": [...]}``) is tolerated too.
+        """
+        result = self._osw.download_file(
+            url_or_title=url, mode="r", overwrite=True
+        )
+        with open(result.path, "r", encoding="utf-8") as fh:
+            payload = json.load(fh)
+        if isinstance(payload, dict):
+            return payload.get("data", []) or []
+        return payload or []
+
+    @staticmethod
+    def _rows_from_array(array: List[Any]) -> List[Any]:
+        """Coerce a list of row dicts into typed ``CyclingDataRow`` objects.
+
+        Each entry looks like ``{"test_time": {"value": ...}, "voltage": {...}}``;
+        pydantic restores each characteristic's default unit. Imported lazily so
+        the module never hard-requires ``osw`` at import time (this only runs once
+        a live connection has already downloaded a file).
+        """
+        if not array:
+            return []
+        try:
+            from osw.model.entity import CyclingDataRow
+        except Exception:  # noqa: BLE001
+            return []
+        return [CyclingDataRow(**entry) for entry in array]
