@@ -13,9 +13,9 @@ The package has two parts:
    battery domain: cells, modules and packs, cell formats and chemistries,
    electrode and electrolyte materials, electrochemical and mechanical tests,
    test procedures, and battery testing devices.
-2. **Cycling data model** - a hand-written `BatteryCyclingDataset` built on the
-   quantitative characteristics, with pandas / pint round-trips and importers
-   for real cycler export files (Maccor).
+2. **Cycling data model** - the OSW-generated `ElectrochemicalCyclingDataset` /
+   `CyclingDataRow`, with `dataset_to_df` / `dataset_from_df` pandas / pint
+   round-trip helpers and importers for real cycler export files (Maccor).
 
 Builds on
 [opensemantic.core](https://github.com/OpenSemanticWorld-Packages/opensemantic.core-python),
@@ -73,6 +73,45 @@ flowchart TB
     serialize -- upload --> osl
     osl -- categories / instances --> browse
     osl -- matching datasets --> query
+```
+
+### Multiple Users
+
+```mermaid
+flowchart TB
+    vA[("vendor format A")]
+    vB[("vendor format B")]
+
+    subgraph prodA["Producer A — full upload"]
+        direction TB
+        parseA["parse"] --> pubA["upload Dataset + Distribution (File)"]
+    end
+    subgraph prodB["Producer B — metadata only"]
+        direction TB
+        parseB["parse"] --> pubB["upload Dataset (metadata)"]
+        parseB -. File kept local .-> localB[("local File store")]
+    end
+
+    vA --> parseA
+    vB --> parseB
+
+    osl[("OSL wiki<br/>store of record")]
+
+    pubA -- Dataset + File --> osl
+    pubB -- Dataset metadata --> osl
+
+    subgraph cons1["Consumer — plotting"]
+        direction TB
+        sel1["select dataset"] --> plot["plot"]
+    end
+    subgraph cons2["Consumer — analytics / ML"]
+        direction TB
+        sel2["select dataset"] --> analyze["analytics / postprocessing / ML"]
+    end
+
+    osl -- query & download --> sel1
+    osl -- query metadata --> sel2
+    analyze -- "🔒 gated File request" --> localB
 ```
 
 Stage status today: **parse** and **unify** and the read-side
@@ -164,49 +203,50 @@ including the shared base and enumeration types.)
 
 ## Cycling data model
 
-`BatteryCyclingDataset` is an ordered list of `CyclingDataRow`. Each row field is
-a typed, unit-aware characteristic (from
-`opensemantic.characteristics.quantitative`), so the field name stays
-unit-agnostic and the unit lives in the value:
+`ElectrochemicalCyclingDataset` holds its rows in `.data`, an ordered list of
+`CyclingDataRow`. Each row field is a typed, unit-aware quantity, so the field
+name stays unit-agnostic and the unit lives in the value:
 
-| field | type | notes |
-|---|---|---|
-| `test_time` | `Time` | required |
-| `voltage` | `Voltage` | required |
-| `current` | `ElectricCurrent` | required |
-| `cycle_count`, `step_count` | `Count` | optional |
-| `step_time` | `Time` | optional |
-| `capacity` | `ElectricCharge` | optional |
-| `energy` | `Energy` | optional |
+| field | quantity | default unit | notes |
+|---|---|---|---|
+| `test_time` | Time | second | required |
+| `voltage` | Voltage | volt | required |
+| `current` | Electric current | ampere | required |
+| `cycle_count`, `step_count` | Dimensionless | dimensionless | optional |
+| `step_time` | Time | second | optional |
+| `capacity` | Electric charge | coulomb | optional |
+| `energy` | Energy | joule | optional |
+
+> **Note.** `ElectrochemicalCyclingDataset` / `CyclingDataRow` are OSW-generated
+> models, currently re-exported from `osw.model.entity` (they will move into the
+> package's generated `_model.py`). A `label` is required on the dataset.
 
 ```python
-from opensemantic.batteries import BatteryCyclingDataset, CyclingDataRow
-from opensemantic.characteristics.quantitative.v1 import (
-    ElectricCurrent,
-    Time,
-    Voltage,
-)
+from opensemantic.batteries import ElectrochemicalCyclingDataset, CyclingDataRow
+from opensemantic.core.v1 import Label
 
-ds = BatteryCyclingDataset(
-    rows=[
+ds = ElectrochemicalCyclingDataset(
+    label=[Label(text="example")],
+    data=[
         CyclingDataRow(
-            test_time=Time(value=0.0),
-            voltage=Voltage(value=3.0),
-            current=ElectricCurrent(value=0.0),
+            test_time={"value": 0.0},
+            voltage={"value": 3.0},
+            current={"value": 0.0},
         ),
         CyclingDataRow(
-            test_time=Time(value=1.0),
-            voltage=Voltage(value=3.1),
-            current=ElectricCurrent(value=0.5),
+            test_time={"value": 1.0},
+            voltage={"value": 3.1},
+            current={"value": 0.5},
         ),
-    ]
+    ],
 )
 ```
 
 ### Importing cycler files
 
-`read_maccor` parses a Maccor text / MIMS export into a `BatteryCyclingDataset`
-(requires the `[maccor]` extra). The five formats produced by
+`read_maccor` parses a Maccor text / MIMS export into an
+`ElectrochemicalCyclingDataset` (labelled with the source file name; requires the
+`[maccor]` extra). The five formats produced by
 [maccor-utility](https://github.com/OpenBattTools/maccor-utility) are supported
 and detected from the file name; pass `fmt=` to override:
 
@@ -215,7 +255,7 @@ from opensemantic.batteries import read_maccor
 
 ds = read_maccor("cell_export2.024.txt")          # format detected from the name
 ds = read_maccor("data.txt", fmt="maccor_export2")  # or set it explicitly
-len(ds.rows)
+len(ds.data)
 ```
 
 Supported formats: `maccor_export1`, `maccor_export2`, `mims_client1`,
@@ -224,20 +264,23 @@ and implement `to_dataframe()`.
 
 ### DataFrames (pandas + pint)
 
-`to_df()` yields a [pint-pandas](https://github.com/hgrecco/pint-pandas)
-DataFrame (one column per field, unit carried by the dtype). `from_df()` is the
-inverse and **auto-extends** the row model for any extra column, inferring the
-quantity type from its pint dtype:
+`dataset_to_df(ds)` yields a [pint-pandas](https://github.com/hgrecco/pint-pandas)
+DataFrame (one column per field, unit carried by the dtype).
+`dataset_from_df(df, label=...)` is the inverse; it maps columns to the fixed
+`CyclingDataRow` schema (converting each to the field's default unit) and
+**ignores** any extra column:
 
 ```python
-df = ds.to_df()
+from opensemantic.batteries import dataset_to_df, dataset_from_df
+
+df = dataset_to_df(ds)
 df["voltage"].dtype                       # pint[volt][Float64]
 
-# unit-aware math; power comes out as pint[watt]
+# unit-aware math on the frame; 'power' is not a row field, so it stays on the
+# DataFrame only (dataset_from_df drops it)
 df["power"] = df["voltage"] * df["current"]
 
-enriched = BatteryCyclingDataset.from_df(df)
-type(enriched.rows[0].power).__name__     # 'Power' (auto-typed extra column)
+enriched = dataset_from_df(df, label="derived")
 ```
 
 ### Serialisation
@@ -247,17 +290,17 @@ unit/type, leaving just the number, and the canonical units are restored on load
 
 ```python
 payload = enriched.to_json(exclude_defaults=True)
-payload["rows"][1]["voltage"]             # {'value': 3.1}
+payload["data"][1]["voltage"]             # {'value': 3.1}
 
-restored = BatteryCyclingDataset.from_json(payload)
-restored.rows[1].voltage.unit.name        # 'volt'
+restored = ElectrochemicalCyclingDataset.from_json(payload)
+restored.data[1].voltage.unit.name        # 'volt'
 ```
 
 Unit-aware CSV - pint-pandas `dequantify()` writes a dedicated unit header line,
 keeping the column keys unit-free:
 
 ```python
-print(enriched.to_df().pint.dequantify().to_csv())
+print(dataset_to_df(enriched).pint.dequantify().to_csv())
 # ,test_time,voltage,current,...
 # unit,second,volt,ampere,...
 # 0,0.0,3.0,0.0,...
@@ -314,5 +357,5 @@ The models in `src/opensemantic/batteries/_model.py` and
 `src/opensemantic/batteries/v1/_model.py` are generated by the
 [osw-python-package-generator](https://github.com/OpenSemanticWorld-Packages/osw-python-package-generator)
 from the `world.opensemantic.batteries` schema package. Do not edit them
-manually. The cycling data model (`_dataset.py`) and importers (`_importers/`)
-are hand-written.
+manually. The cycling data helpers (`_cycling.py`) and importers (`_importers/`)
+are hand-written around those generated classes.

@@ -18,6 +18,7 @@ If you know the real form factor / test kind, swap in e.g. ``PrismaticCell`` or
 
 from pathlib import Path
 
+import pandas as pd
 import panel as pn
 
 from battery_example_data import (
@@ -26,12 +27,13 @@ from battery_example_data import (
     ElectrochemicalCyclingDataset,
     ElectrochemicalTest,
 )
-from opensemantic.batteries import read_maccor
+from opensemantic.batteries import dataset_to_df, read_maccor
 from opensemantic.batteries.v1 import (
     BatteryCell,
     ElectrochemicalTestProcedure,
     TestProcedureItem,
 )
+from opensemantic.characteristics.quantitative.v1 import QuantityValue
 from opensemantic.batteries.view import (
     BatteryDataView,
     OOLDTreeBuilder,
@@ -59,32 +61,50 @@ SOURCES = [
 # Load the real data
 # ---------------------------------------------------------------------------
 
-# read_maccor returns a BatteryCyclingDataset whose rows are the *package's*
-# CyclingDataRow (opensemantic.batteries). Its fields are the same v1 quantitative
-# characteristics used by this example's CyclingDataRow (from battery_example_data),
-# so we can hand the values straight across.
+# read_maccor returns an ``ElectrochemicalCyclingDataset`` (OSW-generated model)
+# whose rows live in ``.data`` and whose typed values use the OSW entity unit
+# enums. This example plots through its own ``CyclingDataRow`` (built on the
+# ``opensemantic.characteristics.quantitative.v1`` characteristics, the layer the
+# v1 ``ElectrochemicalTest.output`` accepts), so we bridge the two via the
+# unit-aware DataFrame (``dataset_to_df``) rather than copying value objects
+# across the two enum layers.
 datasets = [
     read_maccor(src, fmt=fmt) if fmt else read_maccor(src) for src, fmt in SOURCES
 ]
 
+# Example row fields that carry a plottable quantity (all but ``type``).
+_ROW_FIELDS = [f for f in CyclingDataRow.__fields__ if f != "type"]
 
-def _to_dashboard_rows(rows):
-    """Copy each Maccor source row into this example's CyclingDataRow.
 
-    Both sides use the identical ``opensemantic.characteristics.quantitative.v1``
-    characteristic classes, so the typed values pass through unchanged. Fields not
-    shared between the Maccor source rows and the example's CyclingDataRow (e.g.
-    energy — the dashboard row has no such field) are dropped.
+def _field_default_unit(field: str) -> str:
+    """pint-compatible unit string for an example row field's default unit."""
+    unit_default = CyclingDataRow.__fields__[field].type_.__fields__["unit"].default
+    return QuantityValue.get_pint_ureg_compatible_str(unit_default.name)
+
+
+def _to_dashboard_rows(dataset):
+    """Convert a read_maccor dataset into this example's ``CyclingDataRow`` list.
+
+    Goes through the unit-aware DataFrame: each column is converted to the
+    matching example field's default unit, then handed to the quantitative-typed
+    row as a plain magnitude. Columns without a matching example field (e.g.
+    ``energy``) are dropped.
     """
-    shared_fields = [
-        f for f in CyclingDataRow.__fields__ if f in rows[0].__fields__
-    ]
-    return [
-        CyclingDataRow(
-            **{f: getattr(r, f) for f in shared_fields if getattr(r, f) is not None}
-        )
-        for r in rows
-    ]
+    df = dataset_to_df(dataset)
+    columns = [f for f in _ROW_FIELDS if f in df.columns]
+    magnitudes = {
+        f: df[f].pint.to(_field_default_unit(f)).pint.magnitude for f in columns
+    }
+    rows = []
+    for i in range(len(df)):
+        values = {}
+        for f in columns:
+            mag = magnitudes[f].iloc[i]
+            if pd.isna(mag):
+                continue
+            values[f] = {"value": float(mag)}
+        rows.append(CyclingDataRow(**values))
+    return rows
 
 
 # One generic procedure and one cell per measurement. A test links its
@@ -109,7 +129,7 @@ for (src, _fmt), dataset in zip(SOURCES, datasets):
         ],
         output=[ElectrochemicalCyclingDataset(
             label=[Label(text=src.name)],
-            data=_to_dashboard_rows(dataset.rows),
+            data=_to_dashboard_rows(dataset),
         )],
     )
     tests.append(test)

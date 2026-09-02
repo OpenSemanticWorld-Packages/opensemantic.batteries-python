@@ -10,9 +10,12 @@ Guidance for working in this repository. Read this first.
    models for the battery domain (cells, formats, chemistries, materials, tests,
    procedures, devices). **Generated — do not edit by hand.** See the *Generated
    code* section below.
-2. **Cycling data model** (`_dataset.py`) + **importers** (`_importers/`) —
-   hand-written, unit-aware `BatteryCyclingDataset` with pandas/pint round-trips
-   and cycler-file importers (Maccor).
+2. **Cycling data model** (`_cycling.py`) + **importers** (`_importers/`) —
+   the OSW-generated `ElectrochemicalCyclingDataset` / `CyclingDataRow` (see the
+   *Cycling classes* note below) plus hand-written `dataset_to_df` /
+   `dataset_from_df` pandas/pint round-trip helpers and cycler-file importers
+   (Maccor). Replaces the retired hand-written `_dataset.py`
+   (`BatteryCyclingDataset`).
 3. **View / dashboard** (`view/`) — hand-written Panel/Bokeh dashboard for
    plotting cycling data, plus a generic OO-LD → tree builder. Moved here from
    `opensemantic.base` in Aug 2026 because it is battery-specific. See
@@ -64,7 +67,7 @@ src/opensemantic/batteries/
   __init__.py         # re-exports models + dataset + importers (v2 layer)
   _model.py           # GENERATED v2 models — do not edit
   v1/_model.py        # GENERATED v1 models — do not edit
-  _dataset.py         # hand-written cycling data model (BatteryCyclingDataset)
+  _cycling.py         # cycling dataset/row (generated classes) + df round-trip helpers
   _importers/         # hand-written cycler-file importers (Maccor)
   _controller.py      # controller extras (optional import)
   view/               # hand-written dashboard + OO-LD tree builder (see its README)
@@ -109,9 +112,28 @@ from the `world.opensemantic.batteries` schema package.
 
 - **Never hand-edit** the generated files — changes are lost on regeneration.
 - To add domain concepts, change the **schema** upstream and regenerate.
-- Hand-written extensions (`_dataset.py`, `_importers/`, `view/`) subclass or
+- Hand-written extensions (`_cycling.py`, `_importers/`, `view/`) subclass or
   import the generated classes; keep them in separate modules so regeneration
   never touches them.
+
+## Cycling classes (`_cycling.py`)
+
+`ElectrochemicalCyclingDataset` and `CyclingDataRow` are OSW-generated models.
+**Temporary import source:** they are pulled from `osw.model.entity` (populated
+by an OSL `install_dependencies` run) until the schema package ships them in
+`_model.py` / `v1/_model.py`. When that happens, change only the import at the
+top of `_cycling.py`. Because that source may be absent, `__init__.py` imports
+the cycling block under `try/except ImportError`.
+
+The dataset stores its rows in `.data` (a list of `CyclingDataRow`), **not**
+`.rows` (the retired `BatteryCyclingDataset` used `.rows`). The generated classes
+carry no pandas logic, so the pint round-trip lives in module-level helpers
+`dataset_to_df(dataset)` / `dataset_from_df(df, label=...)` (ported from the old
+`TabularData`). `dataset_from_df` requires a `label` (the model field is
+required); the importer passes the source file name. Row values use the OSW
+**entity** unit enums, which differ from `opensemantic.characteristics.quantitative`
+enums — don't pass value objects across the two layers (bridge via the
+DataFrame, as `examples/battery_dashboard_maccor.py` does).
 
 ## Working conventions
 

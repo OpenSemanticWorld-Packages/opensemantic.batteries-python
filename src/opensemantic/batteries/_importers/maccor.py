@@ -4,7 +4,7 @@
 comma, ``0d 00:00:0`` test-time, ...) and ``rename_columns(..., target=raw)``
 canonicalises the column names. This importer maps those canonical names to the
 unit-stripped ``CyclingDataRow`` field names and attaches pint units, then hands
-the DataFrame to ``BatteryCyclingDataset.from_df``.
+the DataFrame to ``dataset_from_df`` (via ``CyclerImporter.read``).
 """
 
 from pathlib import Path
@@ -12,7 +12,7 @@ from typing import Dict, Optional, Tuple, Union
 
 import pandas as pd
 
-from .._dataset import BatteryCyclingDataset
+from .._cycling import ElectrochemicalCyclingDataset
 from .base import CyclerImporter
 
 # canonical (raw) Maccor column -> (stripped field name, pint unit string)
@@ -92,8 +92,8 @@ class MaccorImporter(CyclerImporter):
 
 def read_maccor(
     path: Union[str, Path], fmt: Optional[str] = None
-) -> BatteryCyclingDataset:
-    """Read a Maccor export file into a ``BatteryCyclingDataset``.
+) -> ElectrochemicalCyclingDataset:
+    """Read a Maccor export file into an ``ElectrochemicalCyclingDataset``.
 
     ``fmt`` is the maccor-utility format (or its name); if omitted it is
     detected from the filename.
