@@ -24,6 +24,62 @@ Builds on
 and
 [opensemantic.characteristics.quantitative](https://github.com/OpenSemanticWorld-Packages/opensemantic.characteristics.quantitative-python).
 
+## Data flow
+
+Vendor cycler exports are parsed into a unified, unit-aware dataset, uploaded to
+an OSL wiki (the shared store of record), then browsed, queried, downloaded and
+plotted through the dashboard. The OSL wiki sits at the centre: ingestion
+**writes** to it, the viewer **reads** from it.
+
+```mermaid
+flowchart TB
+    file[("vendor-specific format")]
+    unified[("unified dataset")]
+    osl[("OSL wiki<br/>store of record")]
+    view["plot"]
+
+    file -- parse --> unified
+    unified -- upload --> osl
+    osl -- query & download --> view
+```
+
+### Detailed flow
+
+```mermaid
+flowchart TB
+    file[("vendor-specific format")]
+
+    subgraph ingest["Ingest"]
+        direction TB
+        parse["parse"]
+        unify["unify → dataset<br/>(unit-aware)"]
+        serialize["serialize + upload"]
+        parse --> unify --> serialize
+    end
+
+    osl[("OSL wiki<br/>store of record")]
+
+    subgraph viewer["Dashboard"]
+        direction TB
+        browse["browse category trees"]
+        select["select cell(s) + procedure(s)"]
+        query["query matching datasets"]
+        download["download dataset"]
+        plot["plot"]
+        browse --> select --> query --> download --> plot
+    end
+
+    file --> parse
+    serialize -- upload --> osl
+    osl -- categories / instances --> browse
+    osl -- matching datasets --> query
+```
+
+Stage status today: **parse** and **unify** and the read-side
+**browse → query → download → plot** path are implemented; the **upload** step
+(serialising the dataset and writing it to the wiki) is not yet wired in the
+library — the viewer currently reads pages that were uploaded out of band.
+
 ## Installation
 
 ```bash
