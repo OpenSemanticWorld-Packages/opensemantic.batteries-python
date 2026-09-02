@@ -42,15 +42,18 @@ from opensemantic.core.v1 import Label
 
 pn.extension()
 
-# The same file used by examples/import_maccor.py (format detected from the name).
-SOURCE = (
-    Path(__file__).parent.parent
-    / "tests"
-    / "data"
-    / "cycling"
-    / "maccor"
-    / "231004_test_data_export2_trimmed.024.txt"
+# The same files used by examples/import_maccor.py. Each entry is one
+# measurement of one cell; ``fmt`` selects the Maccor export flavour (``None``
+# lets read_maccor detect it from the name). They are loaded and shown side by
+# side in the dashboard tree.
+_MACCOR_DIR = (
+    Path(__file__).parent.parent / "tests" / "data" / "cycling" / "maccor"
 )
+SOURCES = [
+    (_MACCOR_DIR / "231004_test_data_export2_trimmed.024.txt", None),
+    (_MACCOR_DIR / "raz-IDCyLIB-E1-full cell2_mims_client1_trimmed.txt", "mims_client1"),
+    (_MACCOR_DIR / "raz-IDCyLIB-E1-full cell4_mims_client1_trimmed.txt", "mims_client1"),
+]
 
 # ---------------------------------------------------------------------------
 # Load the real data
@@ -60,13 +63,8 @@ SOURCE = (
 # CyclingDataRow (opensemantic.batteries). Its fields are the same v1 quantitative
 # characteristics used by this example's CyclingDataRow (from battery_example_data),
 # so we can hand the values straight across.
-dataset = read_maccor(SOURCE)
-
-# Fields shared between the Maccor source rows and the example's CyclingDataRow
-# (what the dashboard plots). Energy is dropped — the dashboard row has no such
-# field — but it is easy to add there if you want it on an axis.
-_SHARED_FIELDS = [
-    f for f in CyclingDataRow.__fields__ if f in dataset.rows[0].__fields__
+datasets = [
+    read_maccor(src, fmt=fmt) if fmt else read_maccor(src) for src, fmt in SOURCES
 ]
 
 
@@ -74,58 +72,67 @@ def _to_dashboard_rows(rows):
     """Copy each Maccor source row into this example's CyclingDataRow.
 
     Both sides use the identical ``opensemantic.characteristics.quantitative.v1``
-    characteristic classes, so the typed values pass through unchanged.
+    characteristic classes, so the typed values pass through unchanged. Fields not
+    shared between the Maccor source rows and the example's CyclingDataRow (e.g.
+    energy — the dashboard row has no such field) are dropped.
     """
+    shared_fields = [
+        f for f in CyclingDataRow.__fields__ if f in rows[0].__fields__
+    ]
     return [
         CyclingDataRow(
-            **{f: getattr(r, f) for f in _SHARED_FIELDS if getattr(r, f) is not None}
+            **{f: getattr(r, f) for f in shared_fields if getattr(r, f) is not None}
         )
         for r in rows
     ]
 
 
-# One generic procedure for this single measurement. A test links its
+# One generic procedure and one cell per measurement. A test links its
 # procedure(s) via ``test_procedure`` — a list of ``TestProcedureItem`` whose
 # ``test_procedure_instance`` is the procedure's OSW IRI (``obj.get_iri()``),
 # not the object. The dashboard resolves that IRI back through the
 # ``procedure_objects`` map built below.
-maccor_procedure = ElectrochemicalTestProcedure(
-    label=[Label(text="Maccor Cycling Procedure")]
-)
-
-test = ElectrochemicalTest(
-    label=[Label(text="Maccor Export (024)")],
-    device_under_test=[CylindricalCell(label=[Label(text="Maccor Test Cell")])],
-    test_procedure=[
-        TestProcedureItem(
-            test_procedure_instance=maccor_procedure.get_iri(),
-            test_procedure_instance_property="Property:HasProcedure",
-        )
-    ],
-    output=[ElectrochemicalCyclingDataset(
-        label=[Label(text=SOURCE.name)],
-        data=_to_dashboard_rows(dataset.rows),
-    )],
-)
+tests = []
+procedures = []
+for (src, _fmt), dataset in zip(SOURCES, datasets):
+    procedure = ElectrochemicalTestProcedure(
+        label=[Label(text=f"Maccor Cycling Procedure — {src.name}")]
+    )
+    test = ElectrochemicalTest(
+        label=[Label(text=src.name)],
+        device_under_test=[CylindricalCell(label=[Label(text=f"Cell — {src.name}")])],
+        test_procedure=[
+            TestProcedureItem(
+                test_procedure_instance=procedure.get_iri(),
+                test_procedure_instance_property="Property:HasProcedure",
+            )
+        ],
+        output=[ElectrochemicalCyclingDataset(
+            label=[Label(text=src.name)],
+            data=_to_dashboard_rows(dataset.rows),
+        )],
+    )
+    tests.append(test)
+    procedures.append(procedure)
 
 # ---------------------------------------------------------------------------
-# Single-file category tree: one cell, one procedure
+# Category tree: one cell and one procedure per measurement
 # ---------------------------------------------------------------------------
 
 cell_builder = OOLDTreeBuilder(
-    source=PythonSource(test.device_under_test),
+    source=PythonSource([c for t in tests for c in t.device_under_test]),
     relations=[has_type()],
     ceiling=BatteryCell,
 )
 
 procedure_builder = OOLDTreeBuilder(
-    source=PythonSource([maccor_procedure]),
+    source=PythonSource(procedures),
     relations=[has_type()],
     ceiling=ElectrochemicalTestProcedure,
 )
 
 view = BatteryDataView(
-    tests=[test],
+    tests=tests,
     cell_nodes=cell_builder.build_nodes(),
     cell_edges=cell_builder.build_edges(),
     cell_objects=cell_builder.get_object_map(),
