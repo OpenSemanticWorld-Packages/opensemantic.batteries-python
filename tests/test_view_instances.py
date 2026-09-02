@@ -4,8 +4,10 @@ The card lists the test runs whose cell *and* procedure are both selected as a
 flat :class:`Wunderbaum` — one checkable leaf per instance; unchecking one drops
 it from the plot. These tests drive the view in ``embeddable=True`` mode (no
 browser / Panelini app) and poke the selection/toggle handlers the tree widgets
-would otherwise call — for the instances tree, the ``select`` event carrying
-``{"key": "inst-<idx>", "flag": <bool>}`` that its ``tree_event_callback`` fires.
+would otherwise call — for the instances tree, by writing its ``source`` param
+the way the browser echoes it on a checkbox toggle (``selected`` omitted when
+unchecked). Selection is read from ``source`` and **not** from per-node
+``select`` events, which coalesce away on a click (see the view README).
 
 Skipped as a group when the ``[view]`` extra is not installed.
 """
@@ -36,8 +38,21 @@ def _instance_labels(view) -> List[str]:
 
 
 def _toggle_instance(view, idx: int, flag: bool) -> None:
-    """Simulate the instances tree's ``select`` event for one leaf."""
-    view._on_instance_event("select", {"key": f"inst-{idx}", "flag": flag})
+    """Echo the instances tree's ``source`` after (un)checking one leaf.
+
+    Mirrors ``getSerializableSource``: every leaf is re-emitted, with ``selected``
+    present only when checked (omitted when unchecked) — the same shape the
+    browser sends and :meth:`_on_instance_source_change` diffs.
+    """
+    new_source = []
+    for node in view._instances_tree.source:
+        n = {k: v for k, v in node.items() if k != "selected"}
+        node_idx = view._instance_idx(node)
+        checked = flag if node_idx == idx else bool(node.get("selected"))
+        if checked:
+            n["selected"] = True
+        new_source.append(n)
+    view._instances_tree.source = new_source
 
 
 def test_no_selection_lists_nothing(view):

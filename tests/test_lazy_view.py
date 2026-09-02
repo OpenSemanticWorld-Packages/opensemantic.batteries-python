@@ -113,6 +113,38 @@ def test_selection_yields_matching_datasets_and_instances_tree(view):
     assert len(view._resolve_traces()) == 2
 
 
+def _uncheck_instance(view, idx: int) -> None:
+    """Echo the instances tree's ``source`` after unchecking one leaf.
+
+    Mirrors ``getSerializableSource``: ``selected`` present only when checked.
+    """
+    new_source = []
+    for node in view._instances_tree.source:
+        n = {k: v for k, v in node.items() if k != "selected"}
+        if view._instance_idx(node) != idx and node.get("selected"):
+            n["selected"] = True
+        new_source.append(n)
+    view._instances_tree.source = new_source
+
+
+def test_unchecking_instance_removes_its_trace(view):
+    # The Instances tab has final authority over what is plotted. Two matches;
+    # unchecking one must drop it from the resolved traces. Regression: the tab
+    # read per-node ``select`` events (coalesced away on a click), so unchecking
+    # never reached Python and the trace stayed.
+    _tick_cell_category(view, selected=True)  # Cell A + Cell B
+    _tick_formation(view, selected=True)  # Formation
+    assert len(view._resolve_traces()) == 2
+
+    idx = view._matching_tests()[0]["idx"]
+    _uncheck_instance(view, idx)
+
+    remaining = view._resolve_traces()
+    assert len(remaining) == 1
+    assert all(m["idx"] != idx or not view._instance_selections[idx]
+               for m in view._matching_tests())
+
+
 def test_instance_level_toggle_via_source(view):
     # Expand CylindricalCell in the browser, then tick only Cell A.
     view._cell_tree.source = [

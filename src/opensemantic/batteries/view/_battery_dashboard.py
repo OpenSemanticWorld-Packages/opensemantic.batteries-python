@@ -487,7 +487,7 @@ class BatteryDataView(BaseDataView):
             checked = self._instance_selections.get(idx, True)
             self._instance_selections[idx] = checked
             # Key encodes the test index (labels can collide); parsed back in
-            # _on_instance_event. idx is also stashed under ``data``.
+            # _on_instance_source_change. idx is also stashed under ``data``.
             source.append({
                 "title": m["label"],
                 "key": f"inst-{idx}",
@@ -500,28 +500,64 @@ class BatteryDataView(BaseDataView):
             source=source,
             columns=[{"id": "*", "title": "Instance", "width": "220px"}],
             options={"checkbox": True, "selectMode": "multi"},
-            tree_event_callback=self._on_instance_event,
         )
+        # Read toggles from the echoed ``source``, NOT per-node ``select`` events:
+        # a checkbox click fires click→deactivate→select→activate in one JS tick,
+        # all through the widget's single ``_event_data`` slot, so Bokeh coalesces
+        # them and only the last (``activate``) reaches Python — the ``select`` is
+        # dropped, so unchecking an instance never removed its trace. ``source`` is
+        # full-state and idempotent, so it survives coalescing. The watch is
+        # attached *after* construction so the initial ``source`` above doesn't
+        # trigger it (the selections it carries already match). Same fix as the
+        # cell/procedure trees — see the README "read from source" gotcha.
+        self._instances_tree.param.watch(self._on_instance_source_change, ["source"])
         self._instances_card[0] = self._instances_tree
 
-    def _on_instance_event(self, event_name: str, params: Dict) -> None:
-        """Handle an instances-tree widget event; only ``select`` toggles a plot.
+    def _on_instance_source_change(self, event: Any) -> None:
+        """Apply instance-tab checkbox toggles from the echoed ``source``.
 
-        ``params`` is ``{"key", "flag"}``; ``key`` is ``inst-<idx>`` (see
-        :meth:`_refresh_instances`), so the toggled test index is recovered from
-        it and its plot state set to ``flag``.
+        The Instances tab has final authority over what is plotted: each checked
+        leaf is a plotted trace, each unchecked leaf is dropped. Diffs every
+        leaf's ``selected`` flag (``getSerializableSource`` omits it when false)
+        against :attr:`_instance_selections`, keyed by the test index recovered
+        from the node's ``data.idx`` (or its ``inst-<idx>`` key), and re-renders
+        only when something actually changed.
         """
-        if event_name != "select" or self._restoring:
+        if self._restoring:
             return
-        key = params.get("key")
-        if not isinstance(key, str) or not key.startswith("inst-"):
-            return
-        try:
-            idx = int(key[len("inst-"):])
-        except ValueError:
-            return
-        self._instance_selections[idx] = bool(params.get("flag"))
-        self._build_figure()
+        changed = False
+
+        def walk(nodes: List[Dict]) -> None:
+            nonlocal changed
+            for node in nodes:
+                idx = self._instance_idx(node)
+                if idx is not None:
+                    selected = bool(node.get("selected"))
+                    if self._instance_selections.get(idx, True) != selected:
+                        self._instance_selections[idx] = selected
+                        changed = True
+                children = node.get("children")
+                if children:
+                    walk(children)
+
+        walk(event.new or [])
+        if changed:
+            self._build_figure()
+
+    @staticmethod
+    def _instance_idx(node: Dict) -> Optional[int]:
+        """Test index for an instances-tree node (``data.idx`` or ``inst-<idx>``)."""
+        idx = node.get("idx")
+        if idx is None:
+            idx = (node.get("data") or {}).get("idx")
+        if idx is None:
+            key = node.get("key", "")
+            if isinstance(key, str) and key.startswith("inst-"):
+                try:
+                    idx = int(key[len("inst-"):])
+                except ValueError:
+                    return None
+        return idx if isinstance(idx, int) else None
 
     # -- Tree selection ------------------------------------------------------
 

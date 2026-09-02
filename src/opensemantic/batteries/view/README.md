@@ -85,6 +85,11 @@ full-state and idempotent, so coalescing can't lose it. If you touch the
 selection path, drive it from `source` and keep the `tests/test_lazy_view.py`
 tests (they write `source` exactly as the browser does) green.
 
+The **Instances tab** (`_on_instance_source_change`, in the base
+`BatteryDataView`, so both the eager and lazy views get it) has the same trap and
+the same fix: it reads each leaf's checkbox off `source`, not from `select`
+events — otherwise unchecking an instance silently fails to remove its trace.
+
 The same single-slot coalescing bites two Python→JS channels, so the cascade
 works around both: (1) all `select_node` / `expand_node` calls for one change go
 out as a single atomic `batch_update` (`_tree_action` is one slot, so separate
@@ -187,9 +192,12 @@ Each matching instance is a checkable leaf in a flat `Wunderbaum` (keyed
 `inst-<idx>`, labelled with its output dataset's label, falling back to the
 test-run label), checked by default. Unchecking one removes that instance from
 the plot without changing the tree selection — `_resolve_traces()` skips any
-instance whose toggle is off. The `select` event (`_on_instance_event`) recovers
-the test index from the node key. When no cell or procedure is selected, the card
-shows a placeholder prompt instead.
+instance whose toggle is off. Toggles are read from the tree's **`source`** param
+(`_on_instance_source_change`), which diffs each leaf's `selected` flag and
+recovers the test index from `data.idx` / the `inst-<idx>` key — **not** from
+per-node `select` events, which coalesce away on a checkbox click (see the "read
+from source" gotcha below), so unchecking would otherwise never reach Python.
+When no cell or procedure is selected, the card shows a placeholder prompt instead.
 
 Toggle state lives in `self._instance_selections`, keyed by the test's index in
 `tests`, so it **persists across refreshes**: re-selecting a cell/procedure keeps
@@ -278,7 +286,7 @@ Key design points:
   widget is always handed a fresh `set_selected_instances(pristine, …)` copy, so
   the pristine object itself is never mutated.
 - A `self._restoring` guard suppresses the per-widget watchers
-  (`_on_tree_change`, `_on_unit_change`, `_on_instance_event`,
+  (`_on_tree_change`, `_on_unit_change`, `_on_instance_source_change`,
   `_on_checkbox_change`) during a restore, so the many widget syncs collapse into
   a single `_build_figure()` at the end.
 
