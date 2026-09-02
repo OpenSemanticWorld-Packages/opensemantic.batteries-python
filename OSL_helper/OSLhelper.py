@@ -9,10 +9,14 @@ from osw.defaults import paths as default_paths
 from osw.express import OswExpress
 from uuid import uuid4
 from uuid import UUID
-from osw.model.entity import CylindricalCell, PrismaticCell
+from osw.model.entity import (
+    CylindricalCell,
+    PrismaticCell,
+    ElectrochemicalCyclingDataset,
+    CyclingDataRow,
+)
 from pydantic.v1 import Field
 from typing import Any, List, Literal, Optional, Set, Union
-from opensemantic.batteries._dataset import BatteryCyclingDataset, CyclingDataRow
 from opensemantic.batteries.v1 import AgingTestProcedure, FormationTestProcedure, ElectrochemicalTest, \
     TestProcedureItem, ElectrochemicalTestProcedure
 
@@ -84,5 +88,5 @@ osw_obj.store_entity(test_a)
 #
 # # print()
 #
-# # osw_obj.store_entity(BatteryCyclingDataset)
+# # osw_obj.store_entity(ElectrochemicalCyclingDataset)
 # # osw_obj.store_entity(CyclingDataRow)
