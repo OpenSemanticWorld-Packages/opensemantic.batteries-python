@@ -156,3 +156,44 @@ def test_no_selection_lists_nothing(view):
     assert view._matching_tests() == []
     assert _instance_labels(view) == []
     assert view._resolve_traces() == []
+
+
+def test_unit_selection_actually_converts_the_numbers(view):
+    # Regression: selecting a different unit must convert the plotted values,
+    # not just relabel the axis. The rows are v1 QuantityValues; converting via
+    # the channel-resolved (v2) enum silently no-ops (UndefinedUnitError), so
+    # this pins that the value's *own* enum is used. voltage rows are 3.0 V.
+    _tick_cell_category(view, selected=True)
+    _tick_formation(view, selected=True)
+    traces = view._resolve_traces()
+    assert traces, "expected at least one plotted trace"
+
+    view._unit_selections["voltage"] = "volt"
+    volts = view._get_vals(traces, "voltage")[0]
+    view._unit_selections["voltage"] = "milli_volt"
+    millivolts = view._get_vals(traces, "voltage")[0]
+
+    assert volts[0] == pytest.approx(3.0)
+    assert millivolts[0] == pytest.approx(3000.0)
+    assert millivolts == [pytest.approx(v * 1000.0) for v in volts]
+
+
+def test_scalar_in_unit_converts_values_lacking_to_unit():
+    # Wiki-loaded rows are ``osw.model.entity.*`` objects: they carry a unit enum
+    # but NO ``to_unit`` method (and are not dicts), so the converter must
+    # re-wrap them in the field's characteristic class to convert. Regression for
+    # "picoV relabels the axis but leaves the numbers as volts".
+    from opensemantic.batteries.view import LazyBatteryDataView  # noqa: F401
+    from opensemantic.batteries.view._battery_dashboard import BatteryDataView
+    from opensemantic.characteristics.quantitative.v1 import Voltage, VoltageUnit
+
+    class OswStyleValue:  # no to_unit, has .value + enum .unit — like osw's model
+        def __init__(self, value, unit):
+            self.value = value
+            self.unit = unit
+
+    v = OswStyleValue(3.0, VoltageUnit.volt)
+    assert not hasattr(v, "to_unit")
+    assert BatteryDataView._scalar_in_unit(v, "volt", Voltage) == pytest.approx(3.0)
+    assert BatteryDataView._scalar_in_unit(v, "milli_volt", Voltage) == pytest.approx(3000.0)
+    assert BatteryDataView._scalar_in_unit(v, "kilo_volt", Voltage) == pytest.approx(0.003)

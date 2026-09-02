@@ -89,7 +89,7 @@ class OSLBatteryBackend(BatteryDataBackend):
         field_names: Optional[List[str]] = None,
         cell_root_label: str = BatteryCell.__name__,
         procedure_root_label: str = ElectrochemicalTestProcedure.__name__,
-        disjunctive_query: bool = True,
+        disjunctive_query: bool = False,
     ) -> None:
         self._osw = osw_obj
         self._row_class = row_class
