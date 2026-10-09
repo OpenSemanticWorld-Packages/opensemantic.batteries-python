@@ -1,16 +1,15 @@
-"""Tests for the battery cycling data model + DataFrame round-trip helpers."""
+"""Tests for the battery cycling dataset controller."""
 
 from opensemantic.batteries import (
     CyclingDataRow,
+    CyclingDatasetController,
     ElectrochemicalCyclingDataset,
-    dataset_from_df,
-    dataset_to_df,
 )
 from opensemantic.core.v1 import Label
 
 
-def _sample() -> ElectrochemicalCyclingDataset:
-    return ElectrochemicalCyclingDataset(
+def _sample() -> CyclingDatasetController:
+    return CyclingDatasetController(
         label=[Label(text="sample")],
         data=[
             CyclingDataRow(
@@ -29,11 +28,11 @@ def _sample() -> ElectrochemicalCyclingDataset:
 
 def test_to_df_columns_and_roundtrip():
     ds = _sample()
-    df = dataset_to_df(ds)
+    df = ds.to_df()
     assert {"test_time", "voltage", "current"} <= set(df.columns)
     assert str(df["voltage"].dtype) == "pint[volt][Float64]"
 
-    restored = dataset_from_df(df)
+    restored = CyclingDatasetController.from_df(df)
     assert len(restored.data) == 2
     assert restored.data[1].voltage.value == 3.1
     assert restored.data[1].current.value == 0.5
