@@ -32,10 +32,10 @@ actually connect.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any, List, Optional, Set, Union
 
+from opensemantic.batteries._cycling import CyclingDatasetController
 from opensemantic.batteries.v1 import (
     BatteryCell,
     ElectrochemicalTest,
@@ -114,9 +114,7 @@ class OSLBatteryBackend(BatteryDataBackend):
         self._proc_root_iri = (
             procedure_root_iri or ElectrochemicalTestProcedure.get_cls_iri()
         )
-        self._test_category_iri = (
-            test_category_iri or ElectrochemicalTest.get_cls_iri()
-        )
+        self._test_category_iri = test_category_iri or ElectrochemicalTest.get_cls_iri()
         self._field_names = field_names
         self._cell_root_label = cell_root_label
         self._proc_root_label = procedure_root_label
@@ -161,9 +159,7 @@ class OSLBatteryBackend(BatteryDataBackend):
 
     # -- Query ---------------------------------------------------------------
 
-    def datasets(
-        self, cell_iris: List[str], proc_iris: List[str]
-    ) -> List[Dataset]:
+    def datasets(self, cell_iris: List[str], proc_iris: List[str]) -> List[Dataset]:
         """Cycling datasets for the selected cells × procedures, de-duplicated.
 
         By default (``disjunctive_query=True``) this is a **single** semantic
@@ -330,61 +326,19 @@ class OSLBatteryBackend(BatteryDataBackend):
     # -- Out-of-band (large-dataset) row loading -----------------------------
 
     def _rows_from_distributions(self, entity: Any) -> List[Any]:
-        """Rebuild rows from a dataset whose ``data`` was split into a WikiFile.
+        """Rebuild rows from a dataset whose ``data`` was split into a file.
 
-        The upload script (``OSL_helper/upload_battery_large_data_OSL.py``) writes
-        the bare ``data`` array to a WikiFile and stores a full wiki file URL in
-        the dataset's first ``Distribution`` (``download_url``). Here we do the
-        reverse: download the file, parse the array and coerce every entry back
-        into a typed :class:`CyclingDataRow` (same type as the inline path).
+        The dataset references the file through a ``Distribution``;
+        ``DatasetControllerMixin.materialize_data`` reads it through the file
+        controller registered for that file type and rebuilds the typed rows.
         """
-        distributions = getattr(entity, "distributions", None) or []
-        if not distributions or self._osw is None:
+        if not getattr(entity, "distributions", None):
             return []
-        for dist in distributions:
-            url = getattr(dist, "download_url", None)
-            if not url:
-                continue
-            try:
-                array = self._download_data_array(url)
-            except Exception as exc:  # noqa: BLE001 — degrade to empty rows
-                print(
-                    f"[opensemantic.batteries.view] download {url!r} failed: {exc}"
-                )
-                continue
-            rows = self._rows_from_array(array)
-            if rows:
-                return rows
-        return []
-
-    def _download_data_array(self, url: str) -> List[Any]:
-        """Download the WikiFile at ``url`` and return its ``data`` array.
-
-        The file holds the bare array written by the upload script, but a full
-        dataset dict (``{"data": [...]}``) is tolerated too.
-        """
-        result = self._osw.download_file(
-            url_or_title=url, mode="r", overwrite=True
-        )
-        with open(result.path, "r", encoding="utf-8") as fh:
-            payload = json.load(fh)
-        if isinstance(payload, dict):
-            return payload.get("data", []) or []
-        return payload or []
-
-    @staticmethod
-    def _rows_from_array(array: List[Any]) -> List[Any]:
-        """Coerce a list of row dicts into typed ``CyclingDataRow`` objects.
-
-        Each entry looks like ``{"test_time": {"value": ...}, "voltage": {...}}``;
-        pydantic restores each characteristic's default unit. Imported lazily so
-        the module never hard-requires ``osw`` at import time (this only runs once
-        a live connection has already downloaded a file).
-        """
-        if not array:
-            return []
+        controller = entity
+        if not hasattr(controller, "materialize_data"):
+            controller = CyclingDatasetController.from_other(entity)
         try:
-            from osw.model.entity import CyclingDataRow
-        except Exception:  # noqa: BLE001
+            return list(controller.materialize_data() or [])
+        except Exception as exc:  # noqa: BLE001 - degrade to empty rows
+            print(f"[opensemantic.batteries.view] materialize failed: {exc}")
             return []
-        return [CyclingDataRow(**entry) for entry in array]

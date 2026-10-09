@@ -58,7 +58,6 @@ from opensemantic.base.view import (
     BaseViewConfig,
     get_available_units,
 )
-
 from opensemantic.batteries.view._battery_utils import (
     build_oold_tree_source,
     get_checked_instance_ids,
@@ -92,6 +91,7 @@ class PlotState(BaseModel):
     instance_selections: Dict[int, bool] = Field(default_factory=dict)
     axis_map: Dict[str, Optional[str]] = Field(default_factory=dict)
     unit_selections: Dict[str, str] = Field(default_factory=dict)
+
 
 # ---------------------------------------------------------------------------
 # Field-channel wrapper
@@ -202,7 +202,7 @@ class BatteryDataView(BaseDataView):
 
         # Global axis assignment: field name per axis (None = axis unused)
         self._axis_map: Dict[str, Optional[str]] = {
-            "x":  field_names[0] if len(field_names) > 0 else None,
+            "x": field_names[0] if len(field_names) > 0 else None,
             "y1": field_names[1] if len(field_names) > 1 else None,
             "y2": None,
         }
@@ -366,11 +366,11 @@ class BatteryDataView(BaseDataView):
         LABEL_W = 100
 
         header = pn.Row(
-            pn.pane.Markdown("**Field**",  width=LABEL_W),
-            pn.pane.Markdown("**x**",      width=COL_W),
-            pn.pane.Markdown("**y1**",     width=COL_W),
-            pn.pane.Markdown("**y2**",     width=COL_W),
-            pn.pane.Markdown("**Unit**",   width=80),
+            pn.pane.Markdown("**Field**", width=LABEL_W),
+            pn.pane.Markdown("**x**", width=COL_W),
+            pn.pane.Markdown("**y1**", width=COL_W),
+            pn.pane.Markdown("**y2**", width=COL_W),
+            pn.pane.Markdown("**Unit**", width=80),
         )
         rows: List[Any] = [header]
 
@@ -407,12 +407,14 @@ class BatteryDataView(BaseDataView):
             else:
                 unit_sel = pn.pane.Markdown("—", width=72)
 
-            rows.append(pn.Row(
-                pn.pane.Markdown(field, width=LABEL_W),
-                *cbs,
-                unit_sel,
-                margin=(2, 0),
-            ))
+            rows.append(
+                pn.Row(
+                    pn.pane.Markdown(field, width=LABEL_W),
+                    *cbs,
+                    unit_sel,
+                    margin=(2, 0),
+                )
+            )
 
         return pn.Column(*rows)
 
@@ -428,7 +430,7 @@ class BatteryDataView(BaseDataView):
         # Bulk-sync all checkboxes to axis_map; flag prevents re-entrancy
         self._updating_checkboxes = True
         for (f, a), cb in self._axis_checkboxes.items():
-            expected = (self._axis_map.get(a) == f)
+            expected = self._axis_map.get(a) == f
             if cb.value != expected:
                 cb.value = expected
         self._updating_checkboxes = False
@@ -488,13 +490,15 @@ class BatteryDataView(BaseDataView):
             self._instance_selections[idx] = checked
             # Key encodes the test index (labels can collide); parsed back in
             # _on_instance_source_change. idx is also stashed under ``data``.
-            source.append({
-                "title": m["label"],
-                "key": f"inst-{idx}",
-                "checkbox": True,
-                "selected": checked,
-                "data": {"idx": idx},
-            })
+            source.append(
+                {
+                    "title": m["label"],
+                    "key": f"inst-{idx}",
+                    "checkbox": True,
+                    "selected": checked,
+                    "data": {"idx": idx},
+                }
+            )
 
         self._instances_tree = Wunderbaum(
             source=source,
@@ -554,7 +558,7 @@ class BatteryDataView(BaseDataView):
             key = node.get("key", "")
             if isinstance(key, str) and key.startswith("inst-"):
                 try:
-                    idx = int(key[len("inst-"):])
+                    idx = int(key[len("inst-") :])
                 except ValueError:
                     return None
         return idx if isinstance(idx, int) else None
@@ -592,18 +596,20 @@ class BatteryDataView(BaseDataView):
         if not selected_cells or not selected_procs:
             return []
 
-        selected_proc_iris = {
-            self._obj_iri(p) for p in selected_procs
-        }
+        selected_proc_iris = {self._obj_iri(p) for p in selected_procs}
         selected_proc_iris.discard(None)
 
         matches = []
         for idx, test in enumerate(self._tests):
             dut: List[Any] = getattr(test, "device_under_test", []) or []
-            cell_match = any(self._same_object(c, t) for c in selected_cells for t in dut)
+            cell_match = any(
+                self._same_object(c, t) for c in selected_cells for t in dut
+            )
             proc_match = bool(self._test_proc_iris(test) & selected_proc_iris)
             if cell_match and proc_match:
-                matches.append({"idx": idx, "test": test, "label": self._test_label(test)})
+                matches.append(
+                    {"idx": idx, "test": test, "label": self._test_label(test)}
+                )
         return matches
 
     def _test_label(self, test: Any) -> str:
@@ -624,10 +630,12 @@ class BatteryDataView(BaseDataView):
             rows: List[Any] = getattr(output, "data", []) if output else []
             cell_labels = [self._obj_label(c) for c in dut]
             proc_label = self._proc_label(test)
-            traces.append({
-                "label": f"{'/'.join(cell_labels)} — {proc_label}",
-                "rows": rows,
-            })
+            traces.append(
+                {
+                    "label": f"{'/'.join(cell_labels)} — {proc_label}",
+                    "rows": rows,
+                }
+            )
         return traces
 
     def _proc_by_iri(self) -> Dict[str, Any]:
@@ -737,14 +745,70 @@ class BatteryDataView(BaseDataView):
         char_cls = getattr(ch, "_characteristic_class", None) if ch else None
         result = []
         for trace in traces:
-            vals = []
-            for r in trace["rows"]:
-                v = getattr(r, field, None)
-                vals.append(self._scalar_in_unit(v, target, char_cls))
+            vals = self._column_in_unit(trace, field, target, char_cls)
+            if vals is None:
+                vals = [
+                    self._scalar_in_unit(getattr(r, field, None), target, char_cls)
+                    for r in trace["rows"]
+                ]
             result.append(vals)
         if _DEBUG_UNITS and result and result[0]:
             self._debug_units(traces, field, target, char_cls)
         return result
+
+    def _column_in_unit(
+        self,
+        trace: Dict,
+        field: str,
+        target_unit_name: Optional[str],
+        char_cls: Optional[type],
+    ) -> Optional[List[Optional[float]]]:
+        """A trace column converted through pint, or ``None`` if unavailable.
+
+        Converting the whole column at once keeps the values in one Pydantic
+        layer: the target unit is resolved to a pint string through the field's
+        own characteristic class, so no unit enum has to be matched against a
+        value. Returns ``None`` when the rows cannot be framed, leaving the
+        caller on the per-value path.
+        """
+        import pandas as pd
+
+        df = trace.get("df")
+        if df is None:
+            df = self._trace_df(trace)
+            trace["df"] = df
+        if df is None or field not in df.columns:
+            return None
+
+        series = df[field]
+        if not hasattr(series, "pint"):
+            return None
+        if target_unit_name and char_cls is not None:
+            to_pint_str = getattr(char_cls, "get_pint_ureg_compatible_str", None)
+            if callable(to_pint_str):
+                try:
+                    series = series.pint.to(to_pint_str(target_unit_name))
+                except Exception:  # noqa: BLE001 - bad unit: keep the raw column
+                    pass
+        magnitudes = series.pint.magnitude
+        return [None if pd.isna(v) else float(v) for v in magnitudes]
+
+    @staticmethod
+    def _trace_df(trace: Dict):
+        """The trace's rows as a pint DataFrame, or ``None`` if not convertible."""
+        rows = trace.get("rows") or []
+        if not rows:
+            return None
+        try:
+            from opensemantic.batteries._cycling import CyclingDatasetController
+            from opensemantic.core.v1 import Label
+
+            dataset = CyclingDatasetController(
+                label=[Label(text=trace.get("label") or "trace")], data=rows
+            )
+            return dataset.to_df()
+        except Exception:  # noqa: BLE001 - fall back to the per-value path
+            return None
 
     @staticmethod
     def _scalar_in_unit(
@@ -790,11 +854,19 @@ class BatteryDataView(BaseDataView):
                     value = value.to_unit(enum[target_unit_name])
                 except Exception:  # noqa: BLE001 — bad unit: fall back to raw
                     pass
-        num = value.get("value") if isinstance(value, dict) else getattr(value, "value", value)
+        num = (
+            value.get("value")
+            if isinstance(value, dict)
+            else getattr(value, "value", value)
+        )
         return float(num) if isinstance(num, (int, float, bool)) else None
 
     def _debug_units(
-        self, traces: List[Dict], field: str, target: Optional[str], char_cls: Optional[type]
+        self,
+        traces: List[Dict],
+        field: str,
+        target: Optional[str],
+        char_cls: Optional[type],
     ) -> None:
         """One-shot diagnostic (env ``BATTERY_VIEW_DEBUG_UNITS=1``): dump the
         first value's shape so a non-converting unit switch can be diagnosed
@@ -825,7 +897,9 @@ class BatteryDataView(BaseDataView):
         return f"{field} [{symbol}]" if symbol else field
 
     @staticmethod
-    def _data_range(per_trace: List[List[Optional[float]]]) -> Optional[Tuple[float, float]]:
+    def _data_range(
+        per_trace: List[List[Optional[float]]],
+    ) -> Optional[Tuple[float, float]]:
         flat = [v for trace_vals in per_trace for v in trace_vals if v is not None]
         if not flat:
             return None
@@ -864,17 +938,17 @@ class BatteryDataView(BaseDataView):
         if not traces:
             return None
 
-        x_field  = self._axis_map.get("x")
+        x_field = self._axis_map.get("x")
         y1_field = self._axis_map.get("y1")
         y2_field = self._axis_map.get("y2")
 
         if not x_field or not y1_field:
             return None
 
-        xs_all  = self._get_vals(traces, x_field)
+        xs_all = self._get_vals(traces, x_field)
         y1s_all = self._get_vals(traces, y1_field)
 
-        x_rng  = self._data_range(xs_all)
+        x_rng = self._data_range(xs_all)
         y1_rng = self._data_range(y1s_all)
         if x_rng is None or y1_rng is None:
             return None
@@ -885,7 +959,7 @@ class BatteryDataView(BaseDataView):
             x_axis_label=self._axis_label(x_field),
             y_axis_label=self._axis_label(y1_field),
             x_range=Range1d(*x_rng),
-            y_range=Range1d(*y1_rng),   # explicit range — 0 never forced
+            y_range=Range1d(*y1_rng),  # explicit range — 0 never forced
             tools="pan,wheel_zoom,box_zoom,reset,save",
         )
 
@@ -898,14 +972,16 @@ class BatteryDataView(BaseDataView):
             if y2_rng is not None:
                 fig.extra_y_ranges = {"y2": Range1d(*y2_rng)}
                 fig.add_layout(
-                    LinearAxis(y_range_name="y2", axis_label=self._axis_label(y2_field)),
+                    LinearAxis(
+                        y_range_name="y2", axis_label=self._axis_label(y2_field)
+                    ),
                     "right",
                 )
                 y2_active = True
 
         for i, trace in enumerate(traces):
             color = COLORS[i % len(COLORS)]
-            xs  = xs_all[i]
+            xs = xs_all[i]
             y1s = y1s_all[i]
 
             # y1 (solid, left axis)
@@ -913,7 +989,8 @@ class BatteryDataView(BaseDataView):
             if pairs:
                 xc, yc = zip(*pairs)
                 fig.line(
-                    "x", "y",
+                    "x",
+                    "y",
                     source=ColumnDataSource({"x": list(xc), "y": list(yc)}),
                     legend_label=f"{trace['label']} ({y1_field})",
                     color=color,
@@ -924,13 +1001,13 @@ class BatteryDataView(BaseDataView):
             if y2_active and y2s_all:
                 y2s = y2s_all[i]
                 pairs2 = [
-                    (x, y) for x, y in zip(xs, y2s)
-                    if x is not None and y is not None
+                    (x, y) for x, y in zip(xs, y2s) if x is not None and y is not None
                 ]
                 if pairs2:
                     xc2, yc2 = zip(*pairs2)
                     fig.line(
-                        "x", "y",
+                        "x",
+                        "y",
                         source=ColumnDataSource({"x": list(xc2), "y": list(yc2)}),
                         legend_label=f"{trace['label']} ({y2_field})",
                         color=color,
@@ -1008,11 +1085,15 @@ class BatteryDataView(BaseDataView):
 
             # Trees, instances list, axis grid and unit dropdowns.
             self._cell_tree = self._restore_tree(
-                self._cell_card, self._cell_tree_source, self._cell_tree_title,
+                self._cell_card,
+                self._cell_tree_source,
+                self._cell_tree_title,
                 self._selected_cell_ids,
             )
             self._proc_tree = self._restore_tree(
-                self._proc_card, self._proc_tree_source, self._proc_tree_title,
+                self._proc_card,
+                self._proc_tree_source,
+                self._proc_tree_title,
                 self._selected_proc_ids,
             )
             self._refresh_instances()
@@ -1055,7 +1136,7 @@ class BatteryDataView(BaseDataView):
         """Set axis checkboxes from ``_axis_map`` (guarded against re-entrancy)."""
         self._updating_checkboxes = True
         for (f, a), cb in self._axis_checkboxes.items():
-            cb.value = (self._axis_map.get(a) == f)
+            cb.value = self._axis_map.get(a) == f
         self._updating_checkboxes = False
 
     def _sync_unit_selects(self) -> None:
@@ -1069,11 +1150,13 @@ class BatteryDataView(BaseDataView):
         """Short human label describing a frozen plot's selection."""
         cells = [
             self._obj_label(self._cell_objects[k])
-            for k in state.cell_ids if k in self._cell_objects
+            for k in state.cell_ids
+            if k in self._cell_objects
         ]
         procs = [
             self._obj_label(self._procedure_objects[k])
-            for k in state.proc_ids if k in self._procedure_objects
+            for k in state.proc_ids
+            if k in self._procedure_objects
         ]
         axis = state.axis_map
         y = axis.get("y1") or "—"
@@ -1124,14 +1207,17 @@ class BatteryDataView(BaseDataView):
         """Build the live active-plot panel: blue Freeze + Delete, live figure."""
         freeze_btn = pn.widgets.Button(
             name="❄ Freeze plot",
-            button_type="primary",           # blue = "this is the active plot"
+            button_type="primary",  # blue = "this is the active plot"
             width=140,
             margin=(6, 6),
         )
         freeze_btn.on_click(self._on_freeze_click)
 
         delete_btn = pn.widgets.Button(
-            name="🗑 Delete", button_type="default", width=110, margin=(6, 6),
+            name="🗑 Delete",
+            button_type="default",
+            width=110,
+            margin=(6, 6),
         )
         delete_btn.on_click(lambda evt, r=record: self._on_delete_click(r))
 
@@ -1144,20 +1230,29 @@ class BatteryDataView(BaseDataView):
         return pn.Column(
             pn.Row(freeze_btn, delete_btn, sizing_mode="stretch_width"),
             body,
-            styles={"border": "2px solid var(--panel-primary-color, #0072B5)",
-                    "border-radius": "4px", "margin-top": "8px"},
+            styles={
+                "border": "2px solid var(--panel-primary-color, #0072B5)",
+                "border-radius": "4px",
+                "margin-top": "8px",
+            },
             sizing_mode="stretch_width",
         )
 
     def _build_frozen_panel(self, record: Dict[str, Any]) -> pn.Column:
         """Build a frozen-snapshot panel: Unfreeze + Delete, captured figure."""
         unfreeze_btn = pn.widgets.Button(
-            name="Unfreeze", button_type="default", width=110, margin=(6, 6),
+            name="Unfreeze",
+            button_type="default",
+            width=110,
+            margin=(6, 6),
         )
         unfreeze_btn.on_click(lambda evt, r=record: self._on_unfreeze_click(r))
 
         delete_btn = pn.widgets.Button(
-            name="🗑 Delete", button_type="default", width=110, margin=(6, 6),
+            name="🗑 Delete",
+            button_type="default",
+            width=110,
+            margin=(6, 6),
         )
         delete_btn.on_click(lambda evt, r=record: self._on_delete_click(r))
 
@@ -1178,8 +1273,11 @@ class BatteryDataView(BaseDataView):
                 ),
             ),
             body,
-            styles={"border": "1px solid var(--panel-surface-color, #ccc)",
-                    "border-radius": "4px", "margin-top": "8px"},
+            styles={
+                "border": "1px solid var(--panel-surface-color, #ccc)",
+                "border-radius": "4px",
+                "margin-top": "8px",
+            },
             sizing_mode="stretch_width",
         )
 
@@ -1208,7 +1306,9 @@ class BatteryDataView(BaseDataView):
         active = self._active_record()
         active["state"] = self._capture_state()
         snapshot = self._make_plot_record(
-            self._capture_state(), active=False, figure=fig,
+            self._capture_state(),
+            active=False,
+            figure=fig,
         )
         idx = self._plots.index(active)
         self._plots.insert(idx + 1, snapshot)
