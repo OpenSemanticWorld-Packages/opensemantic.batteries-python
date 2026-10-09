@@ -402,13 +402,18 @@ python upload_example_data_OSL.py --store
 python upload_large_dataset_OSL.py --dataset cell_c
 python upload_large_dataset_OSL.py --dataset cell_d --store
 
+# the same as CSV: the pint-pandas frame with its unit header row. After
+# --store the rows are materialized back from the file as a round-trip check.
+python upload_large_dataset_OSL.py --dataset cell_d --format csv --store
+
 # the semantic searches the dashboard backend runs
 python osl_queries.py                 # list the available queries
 python osl_queries.py --query datasets
 ```
 
 Both accept `--domain` and `--cred-filepath`; `--dataset` takes `cell_c`,
-`cell_d` or `cell_e`, and `--query` one of `cell_subcategories`,
+`cell_d` or `cell_e`, `--format` either `json` (typed values) or `csv`, and
+`--query` one of `cell_subcategories`,
 `cell_instances`, `procedure_subcategories`, `procedure_instances`,
 `tests_of_cell`, `tests_of_cell_and_procedure` or `datasets`.
 

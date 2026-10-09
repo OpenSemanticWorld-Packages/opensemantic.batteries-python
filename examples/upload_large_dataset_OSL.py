@@ -77,17 +77,21 @@ DATASETS = {
 }
 
 
-def build_dataset(osw_obj, spec: dict):
-    """Import the cycler file and move its rows into a WikiFile."""
+def build_dataset(osw_obj, spec: dict, fmt: str = "json"):
+    """Import the cycler file and move its rows into a WikiFile.
+
+    ``fmt`` picks the serialization: ``json`` keeps the typed values, ``csv``
+    writes the pint-pandas frame with its unit header row.
+    """
     source = MACCOR_DIR / spec["source"]
     dataset = read_maccor(source, fmt="mims_client1")
     print(f"Imported {len(dataset.data)} rows from {source.name}")
 
     dataset.label = [Label(text=f"{spec['name']} Dataset")]
     wiki_file = WikiFileController(
-        label=dataset.label, name="cycling_data.json", osw=osw_obj
+        label=dataset.label, name=f"cycling_data.{fmt}", osw=osw_obj
     )
-    distribution = dataset.externalize_data(wiki_file, fmt="json")
+    distribution = dataset.externalize_data(wiki_file, fmt=fmt)
     print(
         f"Uploaded WikiFile: {distribution.download_url} "
         f"({distribution.byte_size} bytes)"
@@ -95,8 +99,8 @@ def build_dataset(osw_obj, spec: dict):
     return dataset
 
 
-def upload(osw_obj, spec: dict) -> ElectrochemicalTest:
-    dataset = build_dataset(osw_obj, spec)
+def upload(osw_obj, spec: dict, fmt: str = "json") -> ElectrochemicalTest:
+    dataset = build_dataset(osw_obj, spec, fmt)
 
     test = ElectrochemicalTest(
         label=[Label(text=spec["name"])],
@@ -116,6 +120,10 @@ def upload(osw_obj, spec: dict) -> ElectrochemicalTest:
     print(f"Stored dataset {dataset.get_iri()}")
     osw_obj.store_entity(test)
     print(f"Stored test {test.get_iri()}")
+
+    # Read the rows back out of the distribution, the way the dashboard does.
+    rows = dataset.materialize_data()
+    print(f"Round trip: {len(rows)} rows materialized back from the {fmt} file")
     return test
 
 
@@ -124,6 +132,7 @@ def main() -> None:
     parser.add_argument("--dataset", choices=sorted(DATASETS), default="cell_c")
     parser.add_argument("--domain", default=WIKI_DOMAIN)
     parser.add_argument("--cred-filepath", type=Path, default=CRED_FILEPATH)
+    parser.add_argument("--format", choices=["json", "csv"], default="json")
     parser.add_argument("--store", action="store_true", help="write to the wiki")
     args = parser.parse_args()
 
@@ -140,7 +149,7 @@ def main() -> None:
     default_paths.cred_filepath = args.cred_filepath
     default_params.wiki_domain = args.domain
     osw_obj = OswExpress(domain=args.domain, cred_filepath=args.cred_filepath)
-    upload(osw_obj, spec)
+    upload(osw_obj, spec, args.format)
 
 
 if __name__ == "__main__":

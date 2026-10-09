@@ -1,5 +1,8 @@
 """Round-trip of a cycling dataset through a wiki file distribution.
 
+Covers both serializations: JSON keeps the typed values, CSV is the
+pint-pandas frame with its unit header row.
+
 The live counterpart of ``test_dataset_distribution.py``: the rows are uploaded
 to a real wiki as a ``WikiFile``, referenced from a ``Distribution``, and read
 back through the same controller methods the dashboard uses.
@@ -55,18 +58,23 @@ def dataset():
     )
 
 
-def test_rows_round_trip_through_a_wiki_file(osw_obj, dataset):
+@pytest.mark.parametrize("fmt", ["json", "csv"])
+def test_rows_round_trip_through_a_wiki_file(osw_obj, dataset, fmt):
     from osw.controller.file.wiki import WikiFileController
 
     expected = dataset.to_df()["voltage"].pint.magnitude.tolist()
 
     wiki_file = WikiFileController(
-        label=[Label(text=f"{uuid.uuid4().hex}.json")], osw=osw_obj
+        label=[Label(text=f"{uuid.uuid4().hex}.{fmt}")],
+        name=f"cycling_data.{fmt}",
+        osw=osw_obj,
     )
-    distribution = dataset.externalize_data(wiki_file, fmt="json")
+    distribution = dataset.externalize_data(wiki_file, fmt=fmt)
     try:
         assert dataset.data is None
-        assert distribution.media_type == "application/json"
+        assert distribution.media_type == (
+            "text/csv" if fmt == "csv" else "application/json"
+        )
 
         rows = dataset.materialize_data()
 
