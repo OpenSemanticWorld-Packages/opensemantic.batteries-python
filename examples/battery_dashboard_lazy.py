@@ -122,9 +122,7 @@ class MemoryBatteryBackend(BatteryDataBackend):
         _, _, kids = self._NODES.get(category_iri, ("", "", []))
         return [self._node(k) for k in kids]
 
-    def datasets(
-        self, cell_iris: List[str], proc_iris: List[str]
-    ) -> List[Dataset]:
+    def datasets(self, cell_iris: List[str], proc_iris: List[str]) -> List[Dataset]:
         out: List[Dataset] = []
         for c in cell_iris:
             for p in proc_iris:

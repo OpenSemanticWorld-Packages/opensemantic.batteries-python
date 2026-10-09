@@ -171,7 +171,9 @@ class LazyBatteryDataView(BatteryDataView):
             source=[self._wb_node(which, root)],
             columns=[{"id": "*", "title": col, "width": "220px"}],
             options={"checkbox": True, "selectMode": "multi"},
-            lazy_load_callback=lambda key, req, w=which: self._lazy_children(w, key, req),
+            lazy_load_callback=lambda key, req, w=which: self._lazy_children(
+                w, key, req
+            ),
         )
         tree.param.watch(
             lambda event, w=which: self._on_source_change(w, event), ["source"]
@@ -218,8 +220,7 @@ class LazyBatteryDataView(BatteryDataView):
         rendered against *which* tree's current selection.
         """
         return [
-            self._wb_node(which, child)
-            for child in self._backend.children(node_key)
+            self._wb_node(which, child) for child in self._backend.children(node_key)
         ]
 
     # -- Selection -> query -> plot ------------------------------------------
@@ -280,9 +281,7 @@ class LazyBatteryDataView(BatteryDataView):
         for iri in self._sel_classes[which]:
             if iri in present and iri not in self._expanded_classes[which]:
                 self._expanded_classes[which].add(iri)
-                actions.append(
-                    {"action": "expandNode", "key": iri, "expanded": True}
-                )
+                actions.append({"action": "expandNode", "key": iri, "expanded": True})
                 return
 
     def _collect_selected(

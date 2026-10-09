@@ -20,26 +20,26 @@ from pathlib import Path
 
 import pandas as pd
 import panel as pn
-
 from battery_example_data import (
     CyclingDataRow,
     CylindricalCell,
     ElectrochemicalCyclingDataset,
     ElectrochemicalTest,
 )
+
 from opensemantic.batteries import dataset_to_df, read_maccor
 from opensemantic.batteries.v1 import (
     BatteryCell,
     ElectrochemicalTestProcedure,
     TestProcedureItem,
 )
-from opensemantic.characteristics.quantitative.v1 import QuantityValue
 from opensemantic.batteries.view import (
     BatteryDataView,
     OOLDTreeBuilder,
     PythonSource,
     has_type,
 )
+from opensemantic.characteristics.quantitative.v1 import QuantityValue
 from opensemantic.core.v1 import Label
 
 pn.extension()
@@ -48,13 +48,17 @@ pn.extension()
 # measurement of one cell; ``fmt`` selects the Maccor export flavour (``None``
 # lets read_maccor detect it from the name). They are loaded and shown side by
 # side in the dashboard tree.
-_MACCOR_DIR = (
-    Path(__file__).parent.parent / "tests" / "data" / "cycling" / "maccor"
-)
+_MACCOR_DIR = Path(__file__).parent.parent / "tests" / "data" / "cycling" / "maccor"
 SOURCES = [
     (_MACCOR_DIR / "231004_test_data_export2_trimmed.024.txt", None),
-    (_MACCOR_DIR / "raz-IDCyLIB-E1-full cell2_mims_client1_trimmed.txt", "mims_client1"),
-    (_MACCOR_DIR / "raz-IDCyLIB-E1-full cell4_mims_client1_trimmed.txt", "mims_client1"),
+    (
+        _MACCOR_DIR / "raz-IDCyLIB-E1-full cell2_mims_client1_trimmed.txt",
+        "mims_client1",
+    ),
+    (
+        _MACCOR_DIR / "raz-IDCyLIB-E1-full cell4_mims_client1_trimmed.txt",
+        "mims_client1",
+    ),
 ]
 
 # ---------------------------------------------------------------------------
@@ -127,10 +131,12 @@ for (src, _fmt), dataset in zip(SOURCES, datasets):
                 test_procedure_instance_property="Property:HasProcedure",
             )
         ],
-        output=[ElectrochemicalCyclingDataset(
-            label=[Label(text=src.name)],
-            data=_to_dashboard_rows(dataset),
-        )],
+        output=[
+            ElectrochemicalCyclingDataset(
+                label=[Label(text=src.name)],
+                data=_to_dashboard_rows(dataset),
+            )
+        ],
     )
     tests.append(test)
     procedures.append(procedure)

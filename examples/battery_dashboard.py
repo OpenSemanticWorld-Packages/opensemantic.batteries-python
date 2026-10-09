@@ -9,18 +9,31 @@ Swap PythonSource for LazySource to load from a remote backend.
 """
 
 import panel as pn
-
 from battery_example_data import (
-    CylindricalCell, PrismaticCell,
+    CylindricalCell,
     ElectrochemicalTestProcedure,
-    cell_a, cell_b, cell_c,
-    aging_test_a, aging_test_b, formation_procedure,
-    test_cell_a_aging_a, test_cell_a_formation,
-    test_cell_b_aging_a, test_cell_b_aging_b,
-    test_cell_b_formation, test_cell_c_formation,
+    PrismaticCell,
+    aging_test_a,
+    aging_test_b,
+    cell_a,
+    cell_b,
+    cell_c,
+    formation_procedure,
+    test_cell_a_aging_a,
+    test_cell_a_formation,
+    test_cell_b_aging_a,
+    test_cell_b_aging_b,
+    test_cell_b_formation,
+    test_cell_c_formation,
 )
+
 from opensemantic.batteries.v1 import BatteryCell
-from opensemantic.batteries.view import BatteryDataView, OOLDTreeBuilder, PythonSource, has_type
+from opensemantic.batteries.view import (
+    BatteryDataView,
+    OOLDTreeBuilder,
+    PythonSource,
+    has_type,
+)
 
 pn.extension()
 

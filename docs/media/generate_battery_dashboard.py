@@ -87,7 +87,9 @@ def main():
             capture(page, frames, 1500)  # trees revealed
 
             print("Select round (cylindrical) cells...")
-            print("  cylindrical:", click_tree_checkbox(page, CELL_TREE, CYLINDRICAL_CB))
+            print(
+                "  cylindrical:", click_tree_checkbox(page, CELL_TREE, CYLINDRICAL_CB)
+            )
             capture(page, frames, 1500)
 
             print("Select all procedures...")
@@ -113,7 +115,9 @@ def main():
             capture(page, frames, 2000)  # snapshot pinned below the live plot
 
             print("Re-select: only the Prismatic cell (Cell C)...")
-            print("  uncheck round:", click_tree_checkbox(page, CELL_TREE, CYLINDRICAL_CB))
+            print(
+                "  uncheck round:", click_tree_checkbox(page, CELL_TREE, CYLINDRICAL_CB)
+            )
             print("  prismatic:", click_tree_checkbox(page, CELL_TREE, PRISMATIC_CB))
             capture(page, frames, 1500)
 

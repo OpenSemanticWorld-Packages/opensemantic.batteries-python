@@ -28,10 +28,10 @@ from panelini.panels.wunderbaum import Wunderbaum
 
 from opensemantic.batteries.view._battery_utils import build_oold_tree_source
 
-
 # ---------------------------------------------------------------------------
 # RelationSpec and factory helpers
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class RelationSpec:
@@ -40,6 +40,7 @@ class RelationSpec:
     ``extract(obj)`` returns a list of *parent* objects or classes for ``obj``.
     The builder adds edges  from=node_id(obj)  to=node_id(target).
     """
+
     relation: str
     extract: Callable[[Any], List[Any]]
 
@@ -57,6 +58,7 @@ def field_rel(field: str, relation: str) -> RelationSpec:
         field_rel("device_under_test", "HasDUT")
         field_rel("protocol", "HasProtocol")
     """
+
     def _extract(obj: Any) -> List[Any]:
         val = getattr(obj, field, None)
         if val is None:
@@ -69,6 +71,7 @@ def field_rel(field: str, relation: str) -> RelationSpec:
 # ---------------------------------------------------------------------------
 # ObjectSource — where objects come from
 # ---------------------------------------------------------------------------
+
 
 class ObjectSource(Protocol):
     def get_objects(self) -> List[Any]: ...
@@ -109,6 +112,7 @@ class LazySource:
 # Node identity helpers
 # ---------------------------------------------------------------------------
 
+
 def _node_id(obj: Any) -> str:
     """Stable node ID for an object.
 
@@ -142,6 +146,7 @@ def _default_label(obj: Any) -> str:
 # ---------------------------------------------------------------------------
 # OOLDTreeBuilder
 # ---------------------------------------------------------------------------
+
 
 class OOLDTreeBuilder:
     """Builds a Wunderbaum tree from Python objects and RelationSpecs.

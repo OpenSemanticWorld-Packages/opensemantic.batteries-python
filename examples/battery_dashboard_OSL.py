@@ -20,7 +20,7 @@ Run with::
 
 Requires the ``osw`` package (``pip install -e ".[osl]"``) and a credentials
 file next to this script (``examples/accounts.pwd.yaml``) — the same connection
-``OSL_helper/Query.py`` uses. Without them the dashboard still builds; the trees
+``examples/osl_queries.py`` runs. Without them the dashboard still builds; the trees
 just stay empty because every query returns nothing.
 """
 
@@ -28,16 +28,16 @@ from pathlib import Path
 
 import panel as pn
 
+# Row class whose typed fields (Time, Voltage, ElectricCurrent, ...) drive the
+# axis grid and unit dropdowns. Same characteristic classes the wiki datasets
+# use, so loaded rows convert units through the shared machinery unchanged.
+from battery_example_data import CyclingDataRow
+
 from opensemantic.batteries.view import (
     LazyBatteryDataView,
     OSLBatteryBackend,
     connect_osw,
 )
-
-# Row class whose typed fields (Time, Voltage, ElectricCurrent, ...) drive the
-# axis grid and unit dropdowns. Same characteristic classes the wiki datasets
-# use, so loaded rows convert units through the shared machinery unchanged.
-from battery_example_data import CyclingDataRow
 
 pn.extension()
 

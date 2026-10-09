@@ -54,13 +54,13 @@ def main() -> None:
     original_df = dataset_to_df(dataset)
     restored_df = dataset_to_df(restored)
 
-    assert len(restored.data) == len(dataset.data), (
-        f"row count changed: {len(dataset.data)} -> {len(restored.data)}"
-    )
+    assert len(restored.data) == len(
+        dataset.data
+    ), f"row count changed: {len(dataset.data)} -> {len(restored.data)}"
     # pint-pandas frames compare equal element-wise when values and units match.
-    assert original_df.pint.dequantify().equals(restored_df.pint.dequantify()), (
-        "round-tripped data does not match the original"
-    )
+    assert original_df.pint.dequantify().equals(
+        restored_df.pint.dequantify()
+    ), "round-tripped data does not match the original"
 
     first = restored.data[0]
     print(

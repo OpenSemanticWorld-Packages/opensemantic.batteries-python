@@ -150,7 +150,7 @@ def test_unfreeze_makes_clicked_plot_active_and_freezes_old_active(view):
     view._on_freeze_click()
     select(view, cell=view._cell_b, proc=view._formation)
 
-    record = view._plots[1]            # frozen Cell A snapshot
+    record = view._plots[1]  # frozen Cell A snapshot
     view._on_unfreeze_click(record)
 
     # Sidebar jumped to the unfrozen (Cell A) selection.
@@ -192,7 +192,7 @@ def test_unfreeze_swaps_in_place_without_reordering(view):
     # Stack now: [active(A/Aging), frozen(B), frozen(A/Formation)]
     assert view._plots[0]["active"] is True
 
-    bottom = view._plots[2]            # frozen Cell A + Formation
+    bottom = view._plots[2]  # frozen Cell A + Formation
     view._on_unfreeze_click(bottom)
 
     # Active jumped to the unfrozen selection.
@@ -238,8 +238,13 @@ def test_unfreeze_does_not_deepcopy_live_tree_source(view):
     view._on_freeze_click()
     select(view, cell=view._cell_b, proc=view._formation)
 
-    poison = [{"data": {"kind": "instance", "node_id": "x"},
-               "selected": True, "live": _Undeepcopyable()}]
+    poison = [
+        {
+            "data": {"kind": "instance", "node_id": "x"},
+            "selected": True,
+            "live": _Undeepcopyable(),
+        }
+    ]
     view._cell_tree.source = poison
     view._proc_tree.source = poison
 
@@ -257,8 +262,8 @@ def test_restore_rebuilds_tree_widget_in_place(view):
 
     view._on_unfreeze_click(view._plots[1])
 
-    assert view._cell_tree is not old_tree          # a fresh widget
-    assert view._cell_card[0] is view._cell_tree     # swapped into the card
+    assert view._cell_tree is not old_tree  # a fresh widget
+    assert view._cell_card[0] is view._cell_tree  # swapped into the card
 
 
 def test_unfreeze_restores_axis_and_unit_widgets(view):
@@ -285,9 +290,7 @@ def test_unfreeze_restores_axis_and_unit_widgets(view):
     view._on_checkbox_change("current", "y2", False)
     assert view._axis_map["y2"] is None
     if alt_unit is not None:
-        default_unit = next(
-            v for v in voltage_sel.options.values() if v != alt_unit
-        )
+        default_unit = next(v for v in voltage_sel.options.values() if v != alt_unit)
         voltage_sel.value = default_unit
 
     # Unfreeze -> axis + unit widgets jump back to the frozen state.

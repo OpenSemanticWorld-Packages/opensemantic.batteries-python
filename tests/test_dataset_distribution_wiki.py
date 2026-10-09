@@ -27,9 +27,7 @@ pytest.importorskip("osw")
 DOMAIN = os.environ.get("TEST_OSL_DOMAIN")
 CRED_FILEPATH = os.environ.get("TEST_OSL_CRED_FILEPATH")
 
-pytestmark = pytest.mark.skipif(
-    not DOMAIN, reason="TEST_OSL_DOMAIN not set"
-)
+pytestmark = pytest.mark.skipif(not DOMAIN, reason="TEST_OSL_DOMAIN not set")
 
 
 @pytest.fixture(scope="module")

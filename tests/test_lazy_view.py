@@ -141,8 +141,10 @@ def test_unchecking_instance_removes_its_trace(view):
 
     remaining = view._resolve_traces()
     assert len(remaining) == 1
-    assert all(m["idx"] != idx or not view._instance_selections[idx]
-               for m in view._matching_tests())
+    assert all(
+        m["idx"] != idx or not view._instance_selections[idx]
+        for m in view._matching_tests()
+    )
 
 
 def test_instance_level_toggle_via_source(view):
@@ -178,8 +180,11 @@ def test_category_select_issues_expand_and_select_batch(view):
     action = view._cell_tree._tree_action
     assert action.get("action") == "batch"
     ops = action["payload"]
-    assert {"action": "expandNode", "key": "Category:CylindricalCell",
-            "expanded": True} in ops
+    assert {
+        "action": "expandNode",
+        "key": "Category:CylindricalCell",
+        "expanded": True,
+    } in ops
     assert {"action": "selectNode", "key": "Item:CellA", "selected": True} in ops
     assert {"action": "selectNode", "key": "Item:CellB", "selected": True} in ops
 
@@ -227,5 +232,9 @@ def test_scalar_in_unit_converts_values_lacking_to_unit():
     v = OswStyleValue(3.0, VoltageUnit.volt)
     assert not hasattr(v, "to_unit")
     assert BatteryDataView._scalar_in_unit(v, "volt", Voltage) == pytest.approx(3.0)
-    assert BatteryDataView._scalar_in_unit(v, "milli_volt", Voltage) == pytest.approx(3000.0)
-    assert BatteryDataView._scalar_in_unit(v, "kilo_volt", Voltage) == pytest.approx(0.003)
+    assert BatteryDataView._scalar_in_unit(v, "milli_volt", Voltage) == pytest.approx(
+        3000.0
+    )
+    assert BatteryDataView._scalar_in_unit(v, "kilo_volt", Voltage) == pytest.approx(
+        0.003
+    )

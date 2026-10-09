@@ -7,33 +7,37 @@ example-specific test run, dataset and cell form-factor classes are defined here
 """
 
 from __future__ import annotations
+
 import random
-
 from typing import List, Optional
-
 
 from opensemantic.batteries.v1 import (
     AgingTestProcedure,
     BatteryCell,
+    ElectrochemicalTest,
     ElectrochemicalTestProcedure,
-    FormationTestProcedure, TestProcedureItem,ElectrochemicalTest
+    FormationTestProcedure,
+    TestProcedureItem,
 )
 from opensemantic.characteristics.quantitative.v1 import (
     Characteristic,
+    Count,
+    ElectricCharge,
     ElectricCurrent,
     Time,
-    Voltage, Count, ElectricCharge,
+    Voltage,
 )
 from opensemantic.core.v1 import Item, Label
 from opensemantic.lab.v1 import AnalyticalLaboratoryProcess
-
 
 # ---------------------------------------------------------------------------
 # Schema definitions
 # ---------------------------------------------------------------------------
 
+
 class CyclingDataRow(Characteristic):
     """One row of a cycling measurement (structured value, no label needed)."""
+
     test_time: Time = None
     voltage: Voltage = None
     current: ElectricCurrent = None
@@ -50,6 +54,7 @@ class ElectrochemicalCyclingDataset(Item):
     Inherits from Item (information artifact on the dataspace).
     `data` is empty on the dataspace; populated in memory after deserialization.
     """
+
     data: List[CyclingDataRow] = []
 
 
@@ -64,6 +69,7 @@ class PrismaticCell(BatteryCell):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _sample_cycling_data() -> List[CyclingDataRow]:
     """Five rows of a toy charge profile spanning two cycles.
@@ -95,22 +101,26 @@ def _sample_cycling_data() -> List[CyclingDataRow]:
         current = c + random.uniform(-0.1, 0.1)
         capacity += max(current, 0.0) * (t - prev_time)  # Q += I·Δt (Ah)
         prev_time = t
-        rows.append(CyclingDataRow(
-            test_time=Time(value=t),
-            voltage=Voltage(value=v + random.uniform(-0.3, 0.3)),
-            current=ElectricCurrent(value=current),
-            cycle_count=Count(value=cycle),
-            capacity=ElectricCharge(value=round(capacity, 4)),
-        ))
+        rows.append(
+            CyclingDataRow(
+                test_time=Time(value=t),
+                voltage=Voltage(value=v + random.uniform(-0.3, 0.3)),
+                current=ElectricCurrent(value=current),
+                cycle_count=Count(value=cycle),
+                capacity=ElectricCharge(value=round(capacity, 4)),
+            )
+        )
     return rows
 
 
 def _make_dataset(name: str) -> List[ElectrochemicalCyclingDataset]:
     # The generated ``ElectrochemicalTest.output`` is a *list* of datasets.
-    return [ElectrochemicalCyclingDataset(
-        label=[Label(text=name)],
-        data=_sample_cycling_data(),
-    )]
+    return [
+        ElectrochemicalCyclingDataset(
+            label=[Label(text=name)],
+            data=_sample_cycling_data(),
+        )
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -135,19 +145,31 @@ formation_procedure = FormationTestProcedure(label=[Label(text="Formation Test")
 # (an OSW IRI like ``Item:OSW…``), not the procedure object — so link each
 # procedure by its ``get_iri()``. The dashboard resolves the IRI back to the
 # procedure object via its procedure_objects map (see BatteryDataView).
-test_procedure_aging_test_a = [TestProcedureItem(test_procedure_subcategory= "Category:OSWdda41d4a4ec0421babe0295c6edcb5df",
-                            test_procedure_instance= aging_test_a.get_iri(),
-                            test_procedure_instance_property = "Property:HasProcedure")]
+test_procedure_aging_test_a = [
+    TestProcedureItem(
+        test_procedure_subcategory="Category:OSWdda41d4a4ec0421babe0295c6edcb5df",
+        test_procedure_instance=aging_test_a.get_iri(),
+        test_procedure_instance_property="Property:HasProcedure",
+    )
+]
 
 
-test_procedure_aging_test_b = [TestProcedureItem(test_procedure_subcategory= "Category:OSWdda41d4a4ec0421babe0295c6edcb5df",
-                            test_procedure_instance= aging_test_b.get_iri(),
-                            test_procedure_instance_property = "Property:HasProcedure")]
+test_procedure_aging_test_b = [
+    TestProcedureItem(
+        test_procedure_subcategory="Category:OSWdda41d4a4ec0421babe0295c6edcb5df",
+        test_procedure_instance=aging_test_b.get_iri(),
+        test_procedure_instance_property="Property:HasProcedure",
+    )
+]
 
 
-test_procedure_formation_procedure = [TestProcedureItem(test_procedure_subcategory= "Category:OSWdda41d4a4ec0421babe0295c6edcb5df",
-                            test_procedure_instance= formation_procedure.get_iri(),
-                            test_procedure_instance_property = "Property:HasProcedure")]
+test_procedure_formation_procedure = [
+    TestProcedureItem(
+        test_procedure_subcategory="Category:OSWdda41d4a4ec0421babe0295c6edcb5df",
+        test_procedure_instance=formation_procedure.get_iri(),
+        test_procedure_instance_property="Property:HasProcedure",
+    )
+]
 
 
 # ---------------------------------------------------------------------------

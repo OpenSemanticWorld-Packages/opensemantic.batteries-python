@@ -98,23 +98,27 @@ def inject_axis_children(
         for axis in axes:
             rows: List[Dict] = []
             for field in field_names:
-                rows.append({
-                    "title": field,
-                    "key": f"{instance_key}/__axis__/{axis}/{field}",
-                    "checkbox": True,
-                    "selected": axis_map.get(axis) == field,
+                rows.append(
+                    {
+                        "title": field,
+                        "key": f"{instance_key}/__axis__/{axis}/{field}",
+                        "checkbox": True,
+                        "selected": axis_map.get(axis) == field,
+                        "expanded": True,
+                        "data": {"kind": "axis_row", "axis": axis, "field": field},
+                    }
+                )
+            groups.append(
+                {
+                    "title": f"({axis})",
+                    "key": f"{instance_key}/__axis__/{axis}",
+                    "checkbox": False,
+                    "selected": False,
                     "expanded": True,
-                    "data": {"kind": "axis_row", "axis": axis, "field": field},
-                })
-            groups.append({
-                "title": f"({axis})",
-                "key": f"{instance_key}/__axis__/{axis}",
-                "checkbox": False,
-                "selected": False,
-                "expanded": True,
-                "data": {"kind": "axis_group", "axis": axis},
-                "children": rows,
-            })
+                    "data": {"kind": "axis_group", "axis": axis},
+                    "children": rows,
+                }
+            )
         return groups
 
     def walk(nodes: List[Dict]) -> None:
@@ -124,7 +128,8 @@ def inject_axis_children(
                 continue
             # Recurse into OO-LD children first
             oold_children = [
-                c for c in node.get("children", [])
+                c
+                for c in node.get("children", [])
                 if c.get("data", {}).get("kind") not in ("axis_group", "axis_row")
             ]
             walk(oold_children)
@@ -157,9 +162,7 @@ def get_checked_instance_ids(source: List[Dict]) -> List[str]:
     return result
 
 
-def set_selected_instances(
-    source: List[Dict], selected_ids: Set[str]
-) -> List[Dict]:
+def set_selected_instances(source: List[Dict], selected_ids: Set[str]) -> List[Dict]:
     """Return a deep copy of *source* with ``selected`` flags rewritten.
 
     Instance nodes are selected iff their ``data.node_id`` is in *selected_ids*;
@@ -180,7 +183,8 @@ def set_selected_instances(
 
         children = node.get("children", [])
         real_children = [
-            c for c in children
+            c
+            for c in children
             if c.get("data", {}).get("kind") not in ("axis_group", "axis_row")
         ]
         if real_children:

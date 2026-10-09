@@ -116,9 +116,7 @@ class BatteryDataBackend(ABC):
     # -- Query ---------------------------------------------------------------
 
     @abstractmethod
-    def datasets(
-        self, cell_iris: List[str], proc_iris: List[str]
-    ) -> List[Dataset]:
+    def datasets(self, cell_iris: List[str], proc_iris: List[str]) -> List[Dataset]:
         """Cycling datasets for the selected cells crossed with procedures.
 
         The view passes the currently checked cell and procedure instance ids;

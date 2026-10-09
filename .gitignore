@@ -60,4 +60,3 @@ MANIFEST
 # transient artifacts from docs/media/generate_battery_dashboard*.py
 docs/media/_gen_server_*.log
 docs/media/_frame_*.png
-

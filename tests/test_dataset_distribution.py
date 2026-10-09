@@ -28,9 +28,7 @@ def _dataset() -> CyclingDatasetController:
 
 
 def _local_file(tmp_path, name):
-    return LocalFile(
-        label=[Label(text=name)], local_path=str(tmp_path / name)
-    )
+    return LocalFile(label=[Label(text=name)], local_path=str(tmp_path / name))
 
 
 @pytest.mark.parametrize("fmt", FORMATS)

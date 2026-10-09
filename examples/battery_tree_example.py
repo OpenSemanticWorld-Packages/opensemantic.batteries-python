@@ -17,8 +17,8 @@ Swap the source to LazySource to load from a remote backend:
 """
 
 import panel as pn
-
 from battery_example_data import cell_a, cell_b, cell_c
+
 from opensemantic.batteries.v1 import BatteryCell
 from opensemantic.batteries.view import OOLDTreeBuilder, PythonSource, has_type
 
