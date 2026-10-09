@@ -14,8 +14,9 @@ The package has two parts:
    electrode and electrolyte materials, electrochemical and mechanical tests,
    test procedures, and battery testing devices.
 2. **Cycling data model** - the OSW-generated `ElectrochemicalCyclingDataset` /
-   `CyclingDataRow`, with `dataset_to_df` / `dataset_from_df` pandas / pint
-   round-trip helpers and importers for real cycler export files (Maccor).
+   `CyclingDataRow` and `CyclingDatasetController`, which adds the pandas / pint
+   round-trip and the file distribution handling, plus importers for real cycler
+   export files (Maccor).
 
 Builds on
 [opensemantic.core](https://github.com/OpenSemanticWorld-Packages/opensemantic.core-python),
@@ -218,8 +219,9 @@ name stays unit-agnostic and the unit lives in the value:
 | `energy` | Energy | joule | optional |
 
 > **Note.** `ElectrochemicalCyclingDataset` / `CyclingDataRow` are OSW-generated
-> models, currently re-exported from `osw.model.entity` (they will move into the
-> package's generated `_model.py`). A `label` is required on the dataset.
+> models from the schema package. Work with them through
+> `CyclingDatasetController`, which carries the conversion methods. A `label` is
+> required on the dataset.
 
 ```python
 from opensemantic.batteries import ElectrochemicalCyclingDataset, CyclingDataRow
@@ -264,24 +266,27 @@ and implement `to_dataframe()`.
 
 ### DataFrames (pandas + pint)
 
-`dataset_to_df(ds)` yields a [pint-pandas](https://github.com/hgrecco/pint-pandas)
+`ds.to_df()` yields a [pint-pandas](https://github.com/hgrecco/pint-pandas)
 DataFrame (one column per field, unit carried by the dtype).
-`dataset_from_df(df, label=...)` is the inverse; it maps columns to the fixed
-`CyclingDataRow` schema (converting each to the field's default unit) and
-**ignores** any extra column:
+`CyclingDatasetController.from_df(df, label=...)` is the inverse; it maps columns
+to the fixed `CyclingDataRow` schema (converting each to the field's default
+unit) and **ignores** any extra column:
 
 ```python
-from opensemantic.batteries import dataset_to_df, dataset_from_df
+from opensemantic.batteries import CyclingDatasetController
 
-df = dataset_to_df(ds)
+df = ds.to_df()
 df["voltage"].dtype                       # pint[volt][Float64]
 
 # unit-aware math on the frame; 'power' is not a row field, so it stays on the
-# DataFrame only (dataset_from_df drops it)
+# DataFrame only (from_df drops it)
 df["power"] = df["voltage"] * df["current"]
 
-enriched = dataset_from_df(df, label="derived")
+enriched = CyclingDatasetController.from_df(df, label="derived")
 ```
+
+Both methods come from `DatasetController` in `opensemantic.base`, so any
+dataset with typed rows gets them.
 
 ### Serialisation
 
@@ -300,7 +305,7 @@ Unit-aware CSV - pint-pandas `dequantify()` writes a dedicated unit header line,
 keeping the column keys unit-free:
 
 ```python
-print(dataset_to_df(enriched).pint.dequantify().to_csv())
+print(enriched.to_df().pint.dequantify().to_csv())
 # ,test_time,voltage,current,...
 # unit,second,volt,ampere,...
 # 0,0.0,3.0,0.0,...
@@ -350,6 +355,71 @@ for the architecture (it extends `BaseDataView` from `opensemantic.base.view`),
 the unit-conversion design, and the v1/v2 layer pitfall. Runnable examples:
 [`examples/battery_dashboard.py`](examples/battery_dashboard.py) and
 [`examples/battery_tree_example.py`](examples/battery_tree_example.py).
+
+## Examples
+
+Commands run from the repository root unless noted. The OSL scripts default to
+`accounts.pwd.yaml` in the working directory, so they are run from `examples/`
+(see [`examples/accounts.pwd.yaml.template`](examples/accounts.pwd.yaml.template)),
+or given `--cred-filepath`.
+
+### Dashboards
+
+```bash
+pip install -e ".[view]"
+
+panel serve examples/battery_dashboard.py --dev         # synthetic data
+panel serve examples/battery_dashboard_maccor.py --dev  # real Maccor exports
+panel serve examples/battery_tree_example.py --dev      # tree only
+panel serve examples/battery_dashboard_lazy.py --dev    # lazily loaded trees
+
+pip install -e ".[osl]"
+panel serve examples/battery_dashboard_OSL.py --dev     # trees + data from OSL
+```
+
+### Importing and converting
+
+```bash
+pip install -e ".[maccor]"
+
+python examples/import_maccor.py          # cycler file -> dataset -> DataFrame
+python examples/roundtrip_maccor_json.py  # dataset -> compact JSON -> dataset
+```
+
+### Working with OpenSemanticLab (OSL)
+
+Both upload scripts are a dry run unless `--store` is passed.
+
+```bash
+pip install -e ".[osl,maccor]"   # maccor only needed by the large-dataset script
+cd examples
+
+# the example tree: three cells, three procedures, six tests
+python upload_example_data_OSL.py
+python upload_example_data_OSL.py --store
+
+# a large dataset, rows stored out-of-band in a WikiFile
+python upload_large_dataset_OSL.py --dataset cell_c
+python upload_large_dataset_OSL.py --dataset cell_d --store
+
+# the semantic searches the dashboard backend runs
+python osl_queries.py                 # list the available queries
+python osl_queries.py --query datasets
+```
+
+Both accept `--domain` and `--cred-filepath`; `--dataset` takes `cell_c`,
+`cell_d` or `cell_e`, and `--query` one of `cell_subcategories`,
+`cell_instances`, `procedure_subcategories`, `procedure_instances`,
+`tests_of_cell`, `tests_of_cell_and_procedure` or `datasets`.
+
+### Tests
+
+```bash
+pytest                      # or: tox
+
+# the OSL round-trip, opt-in because it writes to OSL
+TEST_OSL_DOMAIN=wiki-dev.open-semantic-lab.org   TEST_OSL_CRED_FILEPATH=examples/accounts.pwd.yaml   pytest tests/test_dataset_distribution_wiki.py
+```
 
 ## Note
 

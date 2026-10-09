@@ -95,7 +95,7 @@ def build_dataset(osw_obj, spec: dict):
     return dataset
 
 
-def upload(osw_obj, spec: dict, store: bool) -> ElectrochemicalTest:
+def upload(osw_obj, spec: dict) -> ElectrochemicalTest:
     dataset = build_dataset(osw_obj, spec)
 
     test = ElectrochemicalTest(
@@ -111,14 +111,11 @@ def upload(osw_obj, spec: dict, store: bool) -> ElectrochemicalTest:
         output=[dataset],
     )
 
-    if store:
-        # The dataset goes first: its own page keeps the distribution.
-        osw_obj.store_entity(dataset)
-        print(f"Stored dataset {dataset.get_iri()}")
-        osw_obj.store_entity(test)
-        print(f"Stored test {test.get_iri()}")
-    else:
-        print("Dry run. Pass --store to write the dataset and the test.")
+    # The dataset goes first: its own page keeps the distribution.
+    osw_obj.store_entity(dataset)
+    print(f"Stored dataset {dataset.get_iri()}")
+    osw_obj.store_entity(test)
+    print(f"Stored test {test.get_iri()}")
     return test
 
 
@@ -130,11 +127,20 @@ def main() -> None:
     parser.add_argument("--store", action="store_true", help="write to the wiki")
     args = parser.parse_args()
 
+    spec = DATASETS[args.dataset]
+    if not args.store:
+        # The rows are uploaded as part of building the dataset, so a dry run
+        # stops before touching the wiki.
+        source = MACCOR_DIR / spec["source"]
+        dataset = read_maccor(source, fmt="mims_client1")
+        print(f"Imported {len(dataset.data)} rows from {source.name}")
+        print("Dry run. Pass --store to upload the rows and write the test.")
+        return
+
     default_paths.cred_filepath = args.cred_filepath
     default_params.wiki_domain = args.domain
     osw_obj = OswExpress(domain=args.domain, cred_filepath=args.cred_filepath)
-
-    upload(osw_obj, DATASETS[args.dataset], args.store)
+    upload(osw_obj, spec)
 
 
 if __name__ == "__main__":
