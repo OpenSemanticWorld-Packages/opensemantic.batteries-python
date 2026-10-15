@@ -1,10 +1,7 @@
 """Tests for the battery cycling dataset controller."""
 
-from opensemantic.batteries import (
-    CyclingDataRow,
-    CyclingDatasetController,
-    ElectrochemicalCyclingDataset,
-)
+from opensemantic.batteries import CyclingDatasetController
+from opensemantic.batteries.v1 import CyclingDataRow, ElectrochemicalCyclingDataset
 from opensemantic.core.v1 import Label
 
 

@@ -26,8 +26,12 @@ import random
 from pathlib import Path
 from typing import List
 
-from opensemantic.batteries import CyclingDataRow, CyclingDatasetController
-from opensemantic.batteries.v1 import ElectrochemicalTest, TestProcedureItem
+from opensemantic.batteries import CyclingDatasetController
+from opensemantic.batteries.v1 import (
+    CyclingDataRow,
+    ElectrochemicalTest,
+    TestProcedureItem,
+)
 from opensemantic.characteristics.quantitative.v1 import (
     Count,
     ElectricCharge,

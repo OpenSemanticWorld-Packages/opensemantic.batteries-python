@@ -32,6 +32,7 @@ actually connect.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any, List, Optional, Set, Union
 
@@ -355,8 +356,15 @@ class OSLBatteryBackend(BatteryDataBackend):
         generic remote controller, which fetches it with plain urllib - on a
         login-required wiki that returns the login page, not the rows.
         """
-        if self._osw is None or getattr(distribution, "file", None) is not None:
+        if self._osw is None:
             return distribution
+        try:
+            # a reference resolves on access, so a dangling one raises here
+            # rather than answering None - the URL below is then the way in
+            if getattr(distribution, "file", None) is not None:
+                return distribution
+        except Exception as exc:  # noqa: BLE001 - fall through to the URL
+            print(f"[opensemantic.batteries.view] distribution file unreadable: {exc}")
         url = getattr(distribution, "download_url", None) or getattr(
             distribution, "access_url", None
         )
@@ -364,7 +372,8 @@ class OSLBatteryBackend(BatteryDataBackend):
             return distribution
         from osw.controller.file.wiki import WikiFileController
 
-        title = "File:" + url.split("File:")[-1]
+        # the page title, without a query string or fragment the URL may carry
+        title = "File:" + re.split(r"[?#&]", url.split("File:")[-1])[0]
         wiki_file = self._osw.load_entity(title).cast(
             WikiFileController, osw=self._osw
         )

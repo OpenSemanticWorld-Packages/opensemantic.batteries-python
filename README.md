@@ -222,12 +222,18 @@ name stays unit-agnostic and the unit lives in the value:
 > models from the schema package. Work with them through
 > `CyclingDatasetController`, which carries the conversion methods. A `label` is
 > required on the dataset.
+>
+> The controller is built on the **v1** models, matching the
+> `opensemantic.characteristics.quantitative.v1` values of the row fields, so
+> import the row class from `opensemantic.batteries.v1`. The package root stays
+> v2, like every other generated model there.
 
 ```python
-from opensemantic.batteries import ElectrochemicalCyclingDataset, CyclingDataRow
+from opensemantic.batteries import CyclingDatasetController
+from opensemantic.batteries.v1 import CyclingDataRow
 from opensemantic.core.v1 import Label
 
-ds = ElectrochemicalCyclingDataset(
+ds = CyclingDatasetController(
     label=[Label(text="example")],
     data=[
         CyclingDataRow(
@@ -297,7 +303,7 @@ unit/type, leaving just the number, and the canonical units are restored on load
 payload = enriched.to_json(exclude_defaults=True)
 payload["data"][1]["voltage"]             # {'value': 3.1}
 
-restored = ElectrochemicalCyclingDataset.from_json(payload)
+restored = CyclingDatasetController.from_json(payload)
 restored.data[1].voltage.unit.name        # 'volt'
 ```
 

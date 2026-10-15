@@ -7,7 +7,8 @@ live counterpart is ``test_dataset_distribution_wiki.py``.
 
 import pytest
 
-from opensemantic.batteries import CyclingDataRow, CyclingDatasetController
+from opensemantic.batteries import CyclingDatasetController
+from opensemantic.batteries.v1 import CyclingDataRow
 from opensemantic.core.v1 import Label, LocalFile
 
 FORMATS = ["json", "csv"]
