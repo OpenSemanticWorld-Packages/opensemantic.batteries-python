@@ -27,7 +27,7 @@ from battery_example_data import (
     ElectrochemicalTest,
 )
 
-from opensemantic.batteries import dataset_to_df, read_maccor
+from opensemantic.batteries import read_maccor
 from opensemantic.batteries.v1 import (
     BatteryCell,
     ElectrochemicalTestProcedure,
@@ -65,12 +65,13 @@ SOURCES = [
 # Load the real data
 # ---------------------------------------------------------------------------
 
-# read_maccor returns an ``ElectrochemicalCyclingDataset`` (OSW-generated model)
-# whose rows live in ``.data`` and whose typed values use the OSW entity unit
-# enums. This example plots through its own ``CyclingDataRow`` (built on the
+# read_maccor returns a ``CyclingDatasetController`` (the OSW-generated model
+# plus the DataFrame conversions) whose rows live in ``.data`` and whose typed
+# values use the OSW entity unit enums. This example plots through its own
+# ``CyclingDataRow`` (built on the
 # ``opensemantic.characteristics.quantitative.v1`` characteristics, the layer the
 # v1 ``ElectrochemicalTest.output`` accepts), so we bridge the two via the
-# unit-aware DataFrame (``dataset_to_df``) rather than copying value objects
+# unit-aware DataFrame (``to_df``) rather than copying value objects
 # across the two enum layers.
 datasets = [
     read_maccor(src, fmt=fmt) if fmt else read_maccor(src) for src, fmt in SOURCES
@@ -94,7 +95,7 @@ def _to_dashboard_rows(dataset):
     row as a plain magnitude. Columns without a matching example field (e.g.
     ``energy``) are dropped.
     """
-    df = dataset_to_df(dataset)
+    df = dataset.to_df()
     columns = [f for f in _ROW_FIELDS if f in df.columns]
     magnitudes = {
         f: df[f].pint.to(_field_default_unit(f)).pint.magnitude for f in columns

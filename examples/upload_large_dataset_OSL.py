@@ -12,10 +12,10 @@ datasets:
 
 The dashboard reverses step 1 with ``materialize_data``.
 
-Coercion note: v1 ``ElectrochemicalTest.output`` is typed ``List[Item]``, so a
-dataset put there is coerced to a bare ``Item`` and loses ``data`` /
-``distributions`` in *that copy*. Hence step 2: the dataset's own page keeps the
-distribution and the test only references it by IRI.
+Typing note: v1 ``ElectrochemicalTest.output`` is typed ``List[Item]``, so what
+it holds is read as an ``Item`` even though pydantic keeps the dataset's own
+fields. Hence step 2: the dataset's own page carries the distribution and the
+test references it by IRI, so nothing depends on how the nested copy is typed.
 
 Nothing is written unless ``--store`` is passed. Run from the ``examples``
 directory, after filling in ``accounts.pwd.yaml``::

@@ -331,14 +331,41 @@ class OSLBatteryBackend(BatteryDataBackend):
         The dataset references the file through a ``Distribution``;
         ``DatasetControllerMixin.materialize_data`` reads it through the file
         controller registered for that file type and rebuilds the typed rows.
+        The session goes with it: a wiki file read without one comes back as
+        the login page.
         """
         if not getattr(entity, "distributions", None):
             return []
-        controller = entity
-        if not hasattr(controller, "materialize_data"):
-            controller = CyclingDatasetController.from_other(entity)
         try:
-            return list(controller.materialize_data() or [])
+            controller = entity
+            if not hasattr(controller, "materialize_data"):
+                controller = entity.cast(CyclingDatasetController)
+            controller.distributions = [
+                self._with_wiki_file(dist) for dist in controller.distributions or []
+            ]
+            return list(controller.materialize_data(osw=self._osw) or [])
         except Exception as exc:  # noqa: BLE001 - degrade to empty rows
             print(f"[opensemantic.batteries.view] materialize failed: {exc}")
             return []
+
+    def _with_wiki_file(self, distribution: Any) -> Any:
+        """The distribution with its file resolved to the wiki controller.
+
+        A distribution that names only a URL would otherwise be read with the
+        generic remote controller, which fetches it with plain urllib - on a
+        login-required wiki that returns the login page, not the rows.
+        """
+        if self._osw is None or getattr(distribution, "file", None) is not None:
+            return distribution
+        url = getattr(distribution, "download_url", None) or getattr(
+            distribution, "access_url", None
+        )
+        if not url or "File:" not in url:
+            return distribution
+        from osw.controller.file.wiki import WikiFileController
+
+        title = "File:" + url.split("File:")[-1]
+        wiki_file = self._osw.load_entity(title).cast(
+            WikiFileController, osw=self._osw
+        )
+        return distribution.copy(update={"file": wiki_file})

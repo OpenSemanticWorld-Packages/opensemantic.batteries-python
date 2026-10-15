@@ -41,7 +41,7 @@ Uses BaseDataView mixin for shared plot / log / config cards.
 
 from __future__ import annotations
 
-import os
+import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 import panel as pn
@@ -64,11 +64,7 @@ from opensemantic.batteries.view._battery_utils import (
     set_selected_instances,
 )
 
-# Set ``BATTERY_VIEW_DEBUG_UNITS=1`` to have ``_get_vals`` print the shape of the
-# first plotted value (type / unit / enum / converted result) on every render —
-# a one-shot diagnostic for "unit dropdown relabels the axis but doesn't convert
-# the numbers" against live wiki data.
-_DEBUG_UNITS = os.environ.get("BATTERY_VIEW_DEBUG_UNITS") == "1"
+_logger = logging.getLogger(__name__)
 
 
 class PlotState(BaseModel):
@@ -730,15 +726,11 @@ class BatteryDataView(BaseDataView):
     def _get_vals(self, traces: List[Dict], field: str) -> List[List[Optional[float]]]:
         """Return per-trace lists of converted scalars for *field*.
 
-        Conversion goes through each value's own ``to_unit`` using the enum read
-        off that value (``type(value.unit)``) — **not** ``BaseDataView._numeric``,
-        which resolves the target enum from the channel's IRI and can land on the
-        *wrong* Pydantic layer's ``…Unit`` enum (v2 while the rows are v1). A v2
-        member is a ``str`` subclass, so v1's ``to_unit`` mis-routes it through
-        its string branch, parses the member's IRI value as a unit name and
-        raises ``UndefinedUnitError`` — silently swallowed, leaving the number
-        unconverted. Reading the enum off the value keeps both on one layer. See
-        the v1/v2 gotcha in this package's CLAUDE.md / view README.
+        Conversion goes through the whole column as a pint frame, so every
+        value of a trace is converted the same way and on one Pydantic layer.
+        A trace whose rows cannot be framed contributes nothing: drawing it
+        unconverted would put a second scale on the same axis, which reads as
+        data rather than as a failure.
         """
         target = self._unit_selections.get(field)
         ch = self._field_channels.get(field)
@@ -747,13 +739,13 @@ class BatteryDataView(BaseDataView):
         for trace in traces:
             vals = self._column_in_unit(trace, field, target, char_cls)
             if vals is None:
-                vals = [
-                    self._scalar_in_unit(getattr(r, field, None), target, char_cls)
-                    for r in trace["rows"]
-                ]
+                _logger.warning(
+                    "%s: %r could not be converted to a frame, dropping the trace",
+                    trace.get("label") or "trace",
+                    field,
+                )
+                vals = []
             result.append(vals)
-        if _DEBUG_UNITS and result and result[0]:
-            self._debug_units(traces, field, target, char_cls)
         return result
 
     def _column_in_unit(
@@ -768,15 +760,15 @@ class BatteryDataView(BaseDataView):
         Converting the whole column at once keeps the values in one Pydantic
         layer: the target unit is resolved to a pint string through the field's
         own characteristic class, so no unit enum has to be matched against a
-        value. Returns ``None`` when the rows cannot be framed, leaving the
-        caller on the per-value path.
+        value. Returns ``None`` when the rows cannot be framed.
         """
         import pandas as pd
 
-        df = trace.get("df")
-        if df is None:
-            df = self._trace_df(trace)
-            trace["df"] = df
+        if "df" not in trace:
+            # cached as an explicit key: a failed conversion is None, and
+            # without the key it would be rebuilt once per field
+            trace["df"] = self._trace_df(trace)
+        df = trace["df"]
         if df is None or field not in df.columns:
             return None
 
@@ -809,86 +801,6 @@ class BatteryDataView(BaseDataView):
             return dataset.to_df()
         except Exception:  # noqa: BLE001 - fall back to the per-value path
             return None
-
-    @staticmethod
-    def _scalar_in_unit(
-        value: Any,
-        target_unit_name: Optional[str],
-        char_cls: Optional[type] = None,
-    ) -> Optional[float]:
-        """Numeric magnitude of *value* converted to *target_unit_name*.
-
-        Converts via the value's **own** unit enum (``type(value.unit)``) so the
-        Pydantic layer always matches; on any failure the raw magnitude is used
-        so a bad unit never blanks the plot. Values loaded from the wiki come
-        back as ``osw.model.entity.*`` classes (or raw ``{"value", "unit"}``
-        dicts) that carry a unit enum but **no** ``to_unit`` method, so they are
-        first re-wrapped in *char_cls* (the field's ``quantitative.v1`` class,
-        which does have ``to_unit``) using the value's magnitude + unit IRI —
-        otherwise only the axis label would change. Returns ``None`` for missing
-        / non-numeric values.
-        """
-        if value is None:
-            return None
-        # The value may already be a proper QuantityValue (has ``to_unit``); if
-        # not — an ``osw.model.entity.*`` instance or a raw dict — rebuild it in
-        # the field's characteristic class so it gains ``to_unit`` on the right
-        # (v1) layer. The unit IRI (enum ``.value``) round-trips through both
-        # class hierarchies since they share the OSW schema.
-        if char_cls is not None and not hasattr(value, "to_unit"):
-            try:
-                if isinstance(value, dict):
-                    value = char_cls(**value)
-                elif hasattr(value, "value"):
-                    unit = getattr(value, "unit", None)
-                    value = char_cls(
-                        value=value.value,
-                        unit=getattr(unit, "value", unit),
-                    )
-            except Exception:  # noqa: BLE001 — leave value as-is on failure
-                pass
-        if target_unit_name and hasattr(value, "to_unit"):
-            enum = type(getattr(value, "unit", None))
-            if hasattr(enum, "__members__") and target_unit_name in enum.__members__:
-                try:
-                    value = value.to_unit(enum[target_unit_name])
-                except Exception:  # noqa: BLE001 — bad unit: fall back to raw
-                    pass
-        num = (
-            value.get("value")
-            if isinstance(value, dict)
-            else getattr(value, "value", value)
-        )
-        return float(num) if isinstance(num, (int, float, bool)) else None
-
-    def _debug_units(
-        self,
-        traces: List[Dict],
-        field: str,
-        target: Optional[str],
-        char_cls: Optional[type],
-    ) -> None:
-        """One-shot diagnostic (env ``BATTERY_VIEW_DEBUG_UNITS=1``): dump the
-        first value's shape so a non-converting unit switch can be diagnosed
-        against live wiki data."""
-        for trace in traces:
-            for r in trace["rows"]:
-                v = getattr(r, field, None)
-                if v is None:
-                    continue
-                unit = getattr(v, "unit", None)
-                enum = type(unit)
-                print(
-                    f"[unit-debug] field={field!r} target={target!r} "
-                    f"value_type={type(v).__module__}.{type(v).__name__} "
-                    f"has_to_unit={hasattr(v, 'to_unit')} "
-                    f"unit={unit!r} unit_enum={getattr(enum, '__name__', enum)} "
-                    f"target_in_members={target in getattr(enum, '__members__', {})} "
-                    f"char_cls={getattr(char_cls, '__name__', char_cls)} "
-                    f"-> {self._scalar_in_unit(v, target, char_cls)}",
-                    flush=True,
-                )
-                return
 
     def _axis_label(self, field: str) -> str:
         name = self._unit_selections.get(field)

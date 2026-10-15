@@ -1,7 +1,7 @@
 """Round-trip a loaded Maccor dataset through on-disk JSON serialization.
 
 Loads a real Maccor cycler export into a typed, unit-aware
-``ElectrochemicalCyclingDataset``, serializes it to a JSON file, reads the file
+``CyclingDatasetController``, serializes it to a JSON file, reads the file
 back, deserializes it, and asserts the round-tripped dataset matches the
 original.
 
@@ -17,11 +17,7 @@ Requires the optional Maccor importer dependency:
 import json
 from pathlib import Path
 
-from opensemantic.batteries import (
-    ElectrochemicalCyclingDataset,
-    dataset_to_df,
-    read_maccor,
-)
+from opensemantic.batteries import CyclingDatasetController, read_maccor
 
 HERE = Path(__file__).resolve().parent
 MACCOR_DIR = HERE.parent / "tests" / "data" / "cycling" / "maccor"
@@ -45,14 +41,14 @@ def main() -> None:
     # 3. Read the file back and deserialize into the typed model.
     with OUT_JSON.open("r", encoding="utf-8") as fh:
         loaded_payload = json.load(fh)
-    restored = ElectrochemicalCyclingDataset.from_json(loaded_payload)
+    restored = CyclingDatasetController.from_json(loaded_payload)
     print(f"Re-imported {len(restored.data)} rows from {OUT_JSON.name}")
 
     # 4. Verify the round-trip. Compare the tabular form: this normalizes units
     #    and column ordering, so it catches any value or unit drift across the
     #    serialize -> file -> deserialize path.
-    original_df = dataset_to_df(dataset)
-    restored_df = dataset_to_df(restored)
+    original_df = dataset.to_df()
+    restored_df = restored.to_df()
 
     assert len(restored.data) == len(
         dataset.data

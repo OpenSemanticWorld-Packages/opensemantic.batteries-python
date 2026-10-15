@@ -4,7 +4,8 @@
 comma, ``0d 00:00:0`` test-time, ...) and ``rename_columns(..., target=raw)``
 canonicalises the column names. This importer maps those canonical names to the
 unit-stripped ``CyclingDataRow`` field names and attaches pint units, then hands
-the DataFrame to ``dataset_from_df`` (via ``CyclerImporter.read``).
+the DataFrame to ``CyclingDatasetController.from_df`` (via
+``CyclerImporter.read``).
 """
 
 from pathlib import Path

@@ -20,15 +20,10 @@ def test_fixtures_present():
 @pytest.mark.parametrize("path", MACCOR_FILES, ids=lambda p: p.name)
 def test_maccor_import_roundtrip(path):
     pytest.importorskip("maccor_utility")
-    from opensemantic.batteries import (
-        ElectrochemicalCyclingDataset,
-        dataset_from_df,
-        dataset_to_df,
-        read_maccor,
-    )
+    from opensemantic.batteries import CyclingDatasetController, read_maccor
 
     ds = read_maccor(path)
-    assert isinstance(ds, ElectrochemicalCyclingDataset)
+    assert isinstance(ds, CyclingDatasetController)
     assert len(ds.data) > 0
 
     row = ds.data[0]
@@ -42,6 +37,6 @@ def test_maccor_import_roundtrip(path):
     assert all(b >= a for a, b in zip(times, times[1:]))
 
     # to_df / from_df round-trip preserves row count
-    df = dataset_to_df(ds)
+    df = ds.to_df()
     assert "voltage" in df.columns
-    assert len(dataset_from_df(df).data) == len(ds.data)
+    assert len(CyclingDatasetController.from_df(df).data) == len(ds.data)
