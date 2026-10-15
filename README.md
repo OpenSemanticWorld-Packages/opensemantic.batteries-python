@@ -202,6 +202,45 @@ Tests, procedures and devices:
 (See `src/opensemantic/batteries/_model.py` for the full set of ~95 classes,
 including the shared base and enumeration types.)
 
+### Linking a test to its procedure
+
+`ElectrochemicalTest.test_procedure` is a list of `TestProcedureItem`, and the
+item references the procedure by its OSW IRI string (`procedure.get_iri()`),
+not by the object:
+
+```python
+test = ElectrochemicalTest(
+    label=[Label(text="Cell A - Formation")],
+    test_procedure=[TestProcedureItem(test_procedure_instance=procedure.get_iri())],
+    output=[dataset],
+)
+```
+
+`BatteryDataView` resolves those IRIs back through `procedure_objects`; a
+single `.protocol` object is still accepted as a legacy fallback. `output` is a
+**list** of datasets, and the dashboard plots the first one's `.data`.
+
+## Pydantic layers (v1 and v2)
+
+Every generated model exists twice:
+
+| import path | pydantic |
+|---|---|
+| `opensemantic.batteries` | v2 |
+| `opensemantic.batteries.v1` | v1 |
+
+They are separate class hierarchies, and mixing them fails: a v1 value passed
+where a v2 model is expected does not validate. The subtle half is units -
+**each layer has its own unit enums**. Passing a v2 `VoltageUnit` member to a
+v1 value's `to_unit()` raises `UndefinedUnitError`, because the member is a
+`str` subclass that the v1 code routes through its string branch and parses as
+a unit name. That bug reached the dashboard once.
+
+Pick one layer per module and stay in it. The dashboard, the examples and
+`CyclingDatasetController` use **v1** throughout, matching the
+`opensemantic.characteristics.quantitative.v1` values of the row fields; the
+package root stays v2 like every other generated model there.
+
 ## Cycling data model
 
 `ElectrochemicalCyclingDataset` holds its rows in `.data`, an ordered list of
@@ -440,3 +479,9 @@ The models in `src/opensemantic/batteries/_model.py` and
 from the `world.opensemantic.batteries` schema package. Do not edit them
 manually. The cycling data helpers (`_cycling.py`) and importers (`_importers/`)
 are hand-written around those generated classes.
+
+Hand-written extensions subclass or import the generated classes and live in
+their own modules, so regeneration never touches them. Runtime dependencies
+belong in `setup.cfg` (`[options] install_requires` and `extras_require`), not
+in `pyproject.toml`: this is a PyScaffold `src/` layout with `find_namespace:`
+discovery over the PEP 420 `opensemantic` namespace.
