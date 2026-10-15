@@ -1,10 +1,11 @@
 """Cycling dataset controller.
 
 ``ElectrochemicalCyclingDataset`` and ``CyclingDataRow`` are the generated
-models; :class:`CyclingDatasetController` binds them to
-``opensemantic.base.DatasetControllerMixin``, which provides the DataFrame
-round-trip (``to_df`` / ``from_df``) and the distribution handling
-(``materialize_data`` / ``externalize_data``).
+models. The dataset already carries the DataFrame round-trip (``to_df`` /
+``from_df``) and the distribution handling (``materialize_data`` /
+``externalize_data``), because the ``Dataset`` it is generated from names the
+controller that implements it; :class:`CyclingDatasetController` only supplies
+the label a cycling dataset is built with.
 
 Layer note (see CLAUDE.md): the cycling classes are Pydantic **v1**, matching
 the ``opensemantic.characteristics.quantitative.v1`` values of the row fields.
@@ -13,7 +14,6 @@ Stay in the v1 layer here.
 
 from typing import List, Optional, Union
 
-from opensemantic.base.v1 import DatasetControllerMixin
 from opensemantic.batteries.v1._model import (  # noqa: F401 (re-export)
     CyclingDataRow,
     ElectrochemicalCyclingDataset,
@@ -27,8 +27,8 @@ __all__ = [
 ]
 
 
-class CyclingDatasetController(DatasetControllerMixin, ElectrochemicalCyclingDataset):
-    """A cycling dataset with the DataFrame and distribution conversions."""
+class CyclingDatasetController(ElectrochemicalCyclingDataset):
+    """A cycling dataset, with a default label for the frame conversion."""
 
     @classmethod
     def from_df(
