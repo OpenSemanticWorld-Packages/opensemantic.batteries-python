@@ -1,70 +1,35 @@
 """Minimal cycling-data example following schema_addon conventions.
 
-Cell and procedure classes are imported from ``opensemantic.batteries.v1`` where
-they already exist (``BatteryCell``, ``ElectrochemicalTestProcedure`` and its
-``AgingTestProcedure`` / ``FormationTestProcedure`` subclasses). Only the
-example-specific test run, dataset and cell form-factor classes are defined here.
+Every class comes from ``opensemantic.batteries.v1``: the schema package
+defines the cycling row and dataset as well as the cell form factors, so this
+module only builds instances.
 """
 
 from __future__ import annotations
 
 import random
-from typing import List, Optional
+from typing import List
 
 from opensemantic.batteries.v1 import (
     AgingTestProcedure,
-    BatteryCell,
+    CyclingDataRow,
+    CylindricalCell,
+    ElectrochemicalCyclingDataset,
     ElectrochemicalTest,
     ElectrochemicalTestProcedure,
     FormationTestProcedure,
+    PrismaticCell,
     TestProcedureItem,
 )
 from opensemantic.characteristics.quantitative.v1 import (
-    Characteristic,
     Count,
     ElectricCharge,
     ElectricCurrent,
     Time,
     Voltage,
 )
-from opensemantic.core.v1 import Item, Label
+from opensemantic.core.v1 import Label
 from opensemantic.lab.v1 import AnalyticalLaboratoryProcess
-
-# ---------------------------------------------------------------------------
-# Schema definitions
-# ---------------------------------------------------------------------------
-
-
-class CyclingDataRow(Characteristic):
-    """One row of a cycling measurement (structured value, no label needed)."""
-
-    test_time: Time = None
-    voltage: Voltage = None
-    current: ElectricCurrent = None
-
-    cycle_count: Optional[Count] = None
-    step_count: Optional[Count] = None
-    step_time: Optional[Time] = None
-    capacity: Optional[ElectricCharge] = None
-
-
-class ElectrochemicalCyclingDataset(Item):
-    """Tabular dataset of cycling rows.
-
-    Inherits from Item (information artifact on the dataspace).
-    `data` is empty on the dataspace; populated in memory after deserialization.
-    """
-
-    data: List[CyclingDataRow] = []
-
-
-class CylindricalCell(BatteryCell):
-    pass
-
-
-class PrismaticCell(BatteryCell):
-    pass
-
 
 # ---------------------------------------------------------------------------
 # Helpers

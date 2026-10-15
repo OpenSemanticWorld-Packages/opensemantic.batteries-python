@@ -21,6 +21,7 @@ from typing import Dict, List, Tuple
 
 import panel as pn
 
+from opensemantic.batteries.v1 import CyclingDataRow
 from opensemantic.batteries.view import (
     BatteryDataBackend,
     Dataset,
@@ -28,7 +29,6 @@ from opensemantic.batteries.view import (
     TreeNode,
 )
 from opensemantic.characteristics.quantitative.v1 import (
-    Characteristic,
     ElectricCurrent,
     Time,
     Voltage,
@@ -37,15 +37,10 @@ from opensemantic.characteristics.quantitative.v1 import (
 pn.extension()
 
 
-class Row(Characteristic):
-    test_time: Time = None
-    voltage: Voltage = None
-    current: ElectricCurrent = None
-
-
-def _rows() -> List[Row]:
+def _rows() -> List[CyclingDataRow]:
+    """Three of the row's fields are enough here; the rest are optional."""
     return [
-        Row(
+        CyclingDataRow(
             test_time=Time(value=float(i)),
             voltage=Voltage(value=3.0 + 0.1 * i),
             current=ElectricCurrent(value=0.5 * (i % 2)),
@@ -104,7 +99,7 @@ class MemoryBatteryBackend(BatteryDataBackend):
 
     @property
     def row_class(self) -> type:
-        return Row
+        return CyclingDataRow
 
     @property
     def cell_root(self) -> TreeNode:
