@@ -460,6 +460,21 @@ pytest                      # or: tox
 TEST_OSL_DOMAIN=wiki-dev.open-semantic-lab.org   TEST_OSL_CRED_FILEPATH=examples/accounts.pwd.yaml   pytest tests/test_dataset_distribution_wiki.py
 ```
 
+## Pending upstream fixes
+
+- **Vectorize `to_df` in `opensemantic.base`**: `DatasetControllerMixin.to_df`
+  converts every value with its own `to_pint()` call, about 0.4 s for 2000 rows.
+  The dashboard caches the frames per dataset, but the first plot after a
+  selection is still slow. Fix: one pint array conversion per column.
+- **Add `step_type` to the schema**: `CyclingDataRow` in
+  `world.opensemantic.batteries` has no step mode. `_cycling.py` adds it with
+  the local `StepType` enum and the `StepTypedCyclingDataRow` subclass. Once
+  the schema ships `step_type`, regenerate the models, then remove the subclass
+  and the `data` override on `CyclingDatasetController`. The JSON and CSV
+  files keep working if the field name and the enum values stay the same.
+  `CyclingDatasetController.from_df` also drops empty object columns, because
+  the base `from_df` fails on them. Remove that guard once base handles them.
+
 ## Note
 
 The models in `src/opensemantic/batteries/_model.py` and

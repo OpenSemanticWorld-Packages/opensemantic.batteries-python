@@ -14,6 +14,8 @@ Axes & Units grid
   cols = x | y1 | y2 | Unit
   Per-column radio: exactly one field per axis at a time.
   Unit column: dropdown for each field, auto-detected from opensemantic type.
+  A field typed as an Enum (e.g. ``step_type``) is categorical: no unit, it
+  cannot be x, and as y1 / y2 it is drawn as a step line on a category axis.
 
 Plot
   Single Bokeh figure, left y1 axis + optional right y2 axis.
@@ -26,10 +28,12 @@ Uses BaseDataView mixin for shared plot / log / config cards.
 from __future__ import annotations
 
 import logging
+from enum import Enum
+from functools import partial
 from typing import Any, Dict, List, Optional, Tuple
 
 import panel as pn
-from bokeh.models import ColumnDataSource, LinearAxis, Range1d
+from bokeh.models import ColumnDataSource, FixedTicker, LinearAxis, Range1d
 from bokeh.plotting import figure as bk_figure
 from panelini import Panelini
 from panelini.panels.jsoneditor import JsonEditor
@@ -157,10 +161,12 @@ class BatteryDataView(BaseDataView):
                 self._field_unit_options[f] = {u["symbol"]: u["name"] for u in units}
                 self._unit_selections[f] = units[0]["name"]
 
-        # Global axis assignment: field name per axis (None = axis unused)
+        # Global axis assignment: field name per axis (None = axis unused).
+        # The defaults skip categorical fields, which cannot be x.
+        numeric = [f for f in field_names if self._categorical_values(f) is None]
         self._axis_map: Dict[str, Optional[str]] = {
-            "x": field_names[0] if len(field_names) > 0 else None,
-            "y1": field_names[1] if len(field_names) > 1 else None,
+            "x": numeric[0] if len(numeric) > 0 else None,
+            "y1": numeric[1] if len(numeric) > 1 else None,
             "y2": None,
         }
 
@@ -231,6 +237,18 @@ class BatteryDataView(BaseDataView):
                 if len(channels) == len(field_names):
                     return channels
         return channels
+
+    def _categorical_values(self, field: str) -> Optional[List[str]]:
+        """The category values of a categorical field, else ``None``.
+
+        A field is categorical when its characteristic class is an ``Enum``;
+        the values are the members' values in declaration order.
+        """
+        ch = self._field_channels.get(field)
+        char_cls = getattr(ch, "_characteristic_class", None) if ch else None
+        if isinstance(char_cls, type) and issubclass(char_cls, Enum):
+            return [m.value for m in char_cls]
+        return None
 
     # -- Cell tree -----------------------------------------------------------
 
@@ -315,6 +333,10 @@ class BatteryDataView(BaseDataView):
                     value=(self._axis_map.get(ax) == field),
                     width=COL_W,
                     margin=(4, 2),
+                    # a categorical field cannot be the (numeric) x axis
+                    disabled=(
+                        ax == "x" and self._categorical_values(field) is not None
+                    ),
                 )
                 self._axis_checkboxes[(field, ax)] = cb
                 cb.param.watch(
@@ -654,7 +676,7 @@ class BatteryDataView(BaseDataView):
 
     # -- Scalar extraction with unit conversion ------------------------------
 
-    def _get_vals(self, traces: List[Dict], field: str) -> List[List[Optional[float]]]:
+    def _get_vals(self, traces: List[Dict], field: str) -> List[List[Any]]:
         """Return per-trace lists of converted scalars for *field*.
 
         Conversion goes through the whole column as a pint frame, so every
@@ -685,8 +707,11 @@ class BatteryDataView(BaseDataView):
         field: str,
         target_unit_name: Optional[str],
         char_cls: Optional[type],
-    ) -> Optional[List[Optional[float]]]:
+    ) -> Optional[List[Any]]:
         """A trace column converted through pint, or ``None`` if unavailable.
+
+        A categorical field is not converted: its category strings are
+        returned (``None`` for a missing value).
 
         Converting the whole column at once keeps the values in one Pydantic
         layer: the target unit is resolved to a pint string through the field's
@@ -700,6 +725,13 @@ class BatteryDataView(BaseDataView):
             return None
 
         series = df[field]
+        if self._categorical_values(field) is not None:
+            return [
+                None
+                if v is None or (not isinstance(v, Enum) and pd.isna(v))
+                else (v.value if isinstance(v, Enum) else str(v))
+                for v in series
+            ]
         if not hasattr(series, "pint"):
             return None
         if target_unit_name and char_cls is not None:
@@ -753,6 +785,20 @@ class BatteryDataView(BaseDataView):
         symbol = next((s for s, n in opts.items() if n == name), None)
         return f"{field} [{symbol}]" if symbol else field
 
+    def _categories_of(self, field: str, per_trace: List[List[Any]]) -> List[str]:
+        """The categories present across all traces, in Enum declaration order.
+
+        Values that are not Enum members are appended in first-seen order.
+        """
+        present = {v for trace_vals in per_trace for v in trace_vals if v is not None}
+        declared = self._categorical_values(field) or []
+        ordered = [c for c in declared if c in present]
+        for trace_vals in per_trace:
+            for v in trace_vals:
+                if v is not None and v not in ordered:
+                    ordered.append(v)
+        return ordered
+
     @staticmethod
     def _data_range(
         per_trace: List[List[Optional[float]]],
@@ -785,6 +831,20 @@ class BatteryDataView(BaseDataView):
             else pn.pane.Markdown("_No data selected._", margin=(10, 6))
         ]
 
+    @staticmethod
+    def _to_positions(
+        per_trace: List[List[Any]], categories: List[str]
+    ) -> List[List[Optional[int]]]:
+        """Replace each category string by its integer position (None stays)."""
+        index = {c: i for i, c in enumerate(categories)}
+        return [[index.get(v) for v in trace_vals] for trace_vals in per_trace]
+
+    @staticmethod
+    def _set_category_ticks(axis, categories: List[str]) -> None:
+        """Label the axis ticks 0..n-1 with the category names."""
+        axis.ticker = FixedTicker(ticks=list(range(len(categories))))
+        axis.major_label_overrides = {i: c for i, c in enumerate(categories)}
+
     def _make_figure(self):
         """Build and return a Bokeh figure from the current selection.
 
@@ -800,12 +860,20 @@ class BatteryDataView(BaseDataView):
 
         if not x_field or not y1_field:
             return None
+        if self._categorical_values(x_field) is not None:
+            return None
 
         xs_all = self._get_vals(traces, x_field)
         y1s_all = self._get_vals(traces, y1_field)
 
+        # A categorical axis plots each category at its integer position
+        y1_cats: Optional[List[str]] = None
+        if self._categorical_values(y1_field) is not None:
+            y1_cats = self._categories_of(y1_field, y1s_all)
+            y1s_all = self._to_positions(y1s_all, y1_cats)
+
         x_rng = self._data_range(xs_all)
-        y1_rng = self._data_range(y1s_all)
+        y1_rng = (-0.5, len(y1_cats) - 0.5) if y1_cats else self._data_range(y1s_all)
         if x_rng is None or y1_rng is None:
             return None
 
@@ -818,21 +886,29 @@ class BatteryDataView(BaseDataView):
             y_range=Range1d(*y1_rng),  # explicit range — 0 never forced
             tools="pan,wheel_zoom,box_zoom,reset,save",
         )
+        if y1_cats:
+            self._set_category_ticks(fig.yaxis[0], y1_cats)
 
         # Optional right y2 axis — its range is also derived from data only
         y2_active = False
-        y2s_all: List[List[Optional[float]]] = []
+        y2s_all: List[List[Any]] = []
+        y2_cats: Optional[List[str]] = None
         if y2_field:
             y2s_all = self._get_vals(traces, y2_field)
-            y2_rng = self._data_range(y2s_all)
+            if self._categorical_values(y2_field) is not None:
+                y2_cats = self._categories_of(y2_field, y2s_all)
+                y2s_all = self._to_positions(y2s_all, y2_cats)
+            y2_rng = (
+                (-0.5, len(y2_cats) - 0.5) if y2_cats else self._data_range(y2s_all)
+            )
             if y2_rng is not None:
                 fig.extra_y_ranges = {"y2": Range1d(*y2_rng)}
-                fig.add_layout(
-                    LinearAxis(
-                        y_range_name="y2", axis_label=self._axis_label(y2_field)
-                    ),
-                    "right",
+                y2_axis = LinearAxis(
+                    y_range_name="y2", axis_label=self._axis_label(y2_field)
                 )
+                if y2_cats:
+                    self._set_category_ticks(y2_axis, y2_cats)
+                fig.add_layout(y2_axis, "right")
                 y2_active = True
 
         for i, trace in enumerate(traces):
@@ -844,7 +920,8 @@ class BatteryDataView(BaseDataView):
             pairs = [(x, y) for x, y in zip(xs, y1s) if x is not None and y is not None]
             if pairs:
                 xc, yc = zip(*pairs)
-                fig.line(
+                draw = partial(fig.step, mode="after") if y1_cats else fig.line
+                draw(
                     "x",
                     "y",
                     source=ColumnDataSource({"x": list(xc), "y": list(yc)}),
@@ -861,7 +938,8 @@ class BatteryDataView(BaseDataView):
                 ]
                 if pairs2:
                     xc2, yc2 = zip(*pairs2)
-                    fig.line(
+                    draw2 = partial(fig.step, mode="after") if y2_cats else fig.line
+                    draw2(
                         "x",
                         "y",
                         source=ColumnDataSource({"x": list(xc2), "y": list(yc2)}),

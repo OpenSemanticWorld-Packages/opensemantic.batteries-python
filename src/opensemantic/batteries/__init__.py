@@ -21,7 +21,11 @@ except ImportError:
 # to), and importing its model classes as well would replace the v2 classes
 # that the star-import above put in this namespace.
 try:
-    from opensemantic.batteries._cycling import CyclingDatasetController  # noqa: F401
+    from opensemantic.batteries._cycling import (  # noqa: F401
+        CyclingDatasetController,
+        StepType,
+        StepTypedCyclingDataRow,
+    )
     from opensemantic.batteries._importers import (  # noqa: F401
         CyclerImporter,
         MaccorImporter,
