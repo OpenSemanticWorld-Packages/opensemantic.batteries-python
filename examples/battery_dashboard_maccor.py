@@ -1,172 +1,135 @@
-"""Battery cycling dashboard on a **real Maccor cycler file**.
+"""Lazy battery dashboard over real Maccor cycler files.
 
-Unlike ``battery_dashboard.py`` (which plots synthetic sample data), this loads
-an actual Maccor export via the public ``read_maccor`` importer — the same file
-and loading path as ``examples/import_maccor.py`` — and plots it in the
-``BatteryDataView`` dashboard.
+Same behaviour as ``battery_dashboard_lazy.py`` (lazy trees, cascade,
+instances), but each (cell, procedure) pair plots a real Maccor export read
+with ``read_maccor`` instead of synthetic rows. No credentials or network are
+needed, so this is the local development environment for
+``battery_dashboard_OSL.py``.
 
 Run with:
     panel serve examples/battery_dashboard_maccor.py --dev
 
-A single cycler file is one measurement of one cell, so the category tree is
-deliberately minimal: one cell instance and one procedure instance. The file
-carries no metadata about cell form factor or test type, so we pick neutral
-placeholders — a ``CylindricalCell`` and a generic ``ElectrochemicalTestProcedure``.
-If you know the real form factor / test kind, swap in e.g. ``PrismaticCell`` or
-``FormationTestProcedure`` / ``AgingTestProcedure`` for a richer tree.
+Hierarchy:
+    Cells:       BatteryCell -> CylindricalCell -> [Cell A, Cell B]
+    Procedures:  ElectrochemicalTestProcedure -> AgingTestProcedure
+                     -> [Aging A, Aging B]
+
+Each (cell, procedure) pair has its own Maccor file,
+``tests/data/cycling/maccor/cell<A|B>_aging<A|B>_mims_client1.txt``. Each
+file is read once, the first time a selection needs it.
 """
 
-from pathlib import Path
+from __future__ import annotations
 
-import pandas as pd
+from functools import lru_cache
+from pathlib import Path
+from typing import Dict, List, Tuple
+
 import panel as pn
-from battery_example_data import (
-    CyclingDataRow,
-    CylindricalCell,
-    ElectrochemicalCyclingDataset,
-    ElectrochemicalTest,
-)
 
 from opensemantic.batteries import read_maccor
-from opensemantic.batteries.v1 import (
-    BatteryCell,
-    ElectrochemicalTestProcedure,
-    TestProcedureItem,
-)
+from opensemantic.batteries.v1 import CyclingDataRow
 from opensemantic.batteries.view import (
-    BatteryDataView,
-    OOLDTreeBuilder,
-    PythonSource,
-    has_type,
+    BatteryDataBackend,
+    Dataset,
+    LazyBatteryDataView,
+    TreeNode,
 )
-from opensemantic.characteristics.quantitative.v1 import QuantityValue
-from opensemantic.core.v1 import Label
 
 pn.extension()
 
-# The same files used by examples/import_maccor.py. Each entry is one
-# measurement of one cell; ``fmt`` selects the Maccor export flavour (``None``
-# lets read_maccor detect it from the name). They are loaded and shown side by
-# side in the dashboard tree.
 _MACCOR_DIR = Path(__file__).parent.parent / "tests" / "data" / "cycling" / "maccor"
-SOURCES = [
-    (_MACCOR_DIR / "231004_test_data_export2_trimmed.024.txt", None),
-    (
-        _MACCOR_DIR / "raz-IDCyLIB-E1-full cell2_mims_client1_trimmed.txt",
-        "mims_client1",
-    ),
-    (
-        _MACCOR_DIR / "raz-IDCyLIB-E1-full cell4_mims_client1_trimmed.txt",
-        "mims_client1",
-    ),
-]
-
-# ---------------------------------------------------------------------------
-# Load the real data
-# ---------------------------------------------------------------------------
-
-# read_maccor returns a ``CyclingDatasetController`` (the OSW-generated model
-# plus the DataFrame conversions) whose rows live in ``.data`` and whose typed
-# values use the OSW entity unit enums. This example plots through its own
-# ``CyclingDataRow`` (built on the
-# ``opensemantic.characteristics.quantitative.v1`` characteristics, the layer the
-# v1 ``ElectrochemicalTest.output`` accepts), so we bridge the two via the
-# unit-aware DataFrame (``to_df``) rather than copying value objects
-# across the two enum layers.
-datasets = [
-    read_maccor(src, fmt=fmt) if fmt else read_maccor(src) for src, fmt in SOURCES
-]
-
-# Example row fields that carry a plottable quantity (all but ``type``).
-_ROW_FIELDS = [f for f in CyclingDataRow.__fields__ if f != "type"]
 
 
-def _field_default_unit(field: str) -> str:
-    """pint-compatible unit string for an example row field's default unit."""
-    unit_default = CyclingDataRow.__fields__[field].type_.__fields__["unit"].default
-    return QuantityValue.get_pint_ureg_compatible_str(unit_default.name)
+@lru_cache(maxsize=None)
+def _rows(path: Path) -> List[CyclingDataRow]:
+    """Read a Maccor file; its rows are already ``CyclingDataRow``."""
+    return read_maccor(path, fmt="mims_client1").data
 
 
-def _to_dashboard_rows(dataset):
-    """Convert a read_maccor dataset into this example's ``CyclingDataRow`` list.
+class MaccorBatteryBackend(BatteryDataBackend):
+    """A fixed hierarchy with one Maccor file per (cell, procedure) pair."""
 
-    Goes through the unit-aware DataFrame: each column is converted to the
-    matching example field's default unit, then handed to the quantitative-typed
-    row as a plain magnitude. Columns without a matching example field (e.g.
-    ``energy``) are dropped.
-    """
-    df = dataset.to_df()
-    columns = [f for f in _ROW_FIELDS if f in df.columns]
-    magnitudes = {
-        f: df[f].pint.to(_field_default_unit(f)).pint.magnitude for f in columns
+    # category / instance iri -> (label, kind, [child iris])
+    _NODES: Dict[str, Tuple[str, str, List[str]]] = {
+        # cells
+        "Category:BatteryCell": (
+            "BatteryCell",
+            "class",
+            ["Category:CylindricalCell"],
+        ),
+        "Category:CylindricalCell": (
+            "CylindricalCell",
+            "class",
+            ["Item:CellA", "Item:CellB"],
+        ),
+        "Item:CellA": ("Cell A", "instance", []),
+        "Item:CellB": ("Cell B", "instance", []),
+        # procedures
+        "Category:ElectrochemicalTestProcedure": (
+            "ElectrochemicalTestProcedure",
+            "class",
+            ["Category:AgingTestProcedure"],
+        ),
+        "Category:AgingTestProcedure": (
+            "AgingTestProcedure",
+            "class",
+            ["Item:AgingA", "Item:AgingB"],
+        ),
+        "Item:AgingA": ("Aging A", "instance", []),
+        "Item:AgingB": ("Aging B", "instance", []),
     }
-    rows = []
-    for i in range(len(df)):
-        values = {}
-        for f in columns:
-            mag = magnitudes[f].iloc[i]
-            if pd.isna(mag):
-                continue
-            values[f] = {"value": float(mag)}
-        rows.append(CyclingDataRow(**values))
-    return rows
+
+    # (cell iri, proc iri) -> Maccor file
+    _DATASETS: Dict[Tuple[str, str], Path] = {
+        ("Item:CellA", "Item:AgingA"): _MACCOR_DIR / "cellA_agingA_mims_client1.txt",
+        ("Item:CellB", "Item:AgingA"): _MACCOR_DIR / "cellB_agingA_mims_client1.txt",
+        ("Item:CellA", "Item:AgingB"): _MACCOR_DIR / "cellA_agingB_mims_client1.txt",
+        ("Item:CellB", "Item:AgingB"): _MACCOR_DIR / "cellB_agingB_mims_client1.txt",
+    }
+
+    @property
+    def row_class(self) -> type:
+        return CyclingDataRow
+
+    @property
+    def cell_root(self) -> TreeNode:
+        return self._node("Category:BatteryCell")
+
+    @property
+    def procedure_root(self) -> TreeNode:
+        return self._node("Category:ElectrochemicalTestProcedure")
+
+    def _node(self, iri: str) -> TreeNode:
+        label, kind, _ = self._NODES[iri]
+        return TreeNode(iri=iri, label=label, kind=kind)
+
+    def children(self, category_iri: str) -> List[TreeNode]:
+        _, _, kids = self._NODES.get(category_iri, ("", "", []))
+        return [self._node(k) for k in kids]
+
+    def datasets(self, cell_iris: List[str], proc_iris: List[str]) -> List[Dataset]:
+        out: List[Dataset] = []
+        for c in cell_iris:
+            for p in proc_iris:
+                path = self._DATASETS.get((c, p))
+                if path is not None:
+                    out.append(
+                        Dataset(
+                            id=f"{c}|{p}",
+                            label=f"{self.page_name(c)} - {self.page_name(p)}",
+                            rows=_rows(path),
+                        )
+                    )
+        return out
+
+    def page_name(self, iri: str) -> str:
+        label, _, _ = self._NODES.get(iri, (iri, "", []))
+        return label
 
 
-# One generic procedure and one cell per measurement. A test links its
-# procedure(s) via ``test_procedure`` — a list of ``TestProcedureItem`` whose
-# ``test_procedure_instance`` is the procedure's OSW IRI (``obj.get_iri()``),
-# not the object. The dashboard resolves that IRI back through the
-# ``procedure_objects`` map built below.
-tests = []
-procedures = []
-for (src, _fmt), dataset in zip(SOURCES, datasets):
-    procedure = ElectrochemicalTestProcedure(
-        label=[Label(text=f"Maccor Cycling Procedure — {src.name}")]
-    )
-    test = ElectrochemicalTest(
-        label=[Label(text=src.name)],
-        device_under_test=[CylindricalCell(label=[Label(text=f"Cell — {src.name}")])],
-        test_procedure=[
-            TestProcedureItem(
-                test_procedure_instance=procedure.get_iri(),
-                test_procedure_instance_property="Property:HasProcedure",
-            )
-        ],
-        output=[
-            ElectrochemicalCyclingDataset(
-                label=[Label(text=src.name)],
-                data=_to_dashboard_rows(dataset),
-            )
-        ],
-    )
-    tests.append(test)
-    procedures.append(procedure)
-
-# ---------------------------------------------------------------------------
-# Category tree: one cell and one procedure per measurement
-# ---------------------------------------------------------------------------
-
-cell_builder = OOLDTreeBuilder(
-    source=PythonSource([c for t in tests for c in t.device_under_test]),
-    relations=[has_type()],
-    ceiling=BatteryCell,
+view = LazyBatteryDataView(
+    backend=MaccorBatteryBackend(),
+    title="Battery Cycling Dashboard - Maccor",
 )
-
-procedure_builder = OOLDTreeBuilder(
-    source=PythonSource(procedures),
-    relations=[has_type()],
-    ceiling=ElectrochemicalTestProcedure,
-)
-
-view = BatteryDataView(
-    tests=tests,
-    cell_nodes=cell_builder.build_nodes(),
-    cell_edges=cell_builder.build_edges(),
-    cell_objects=cell_builder.get_object_map(),
-    procedure_nodes=procedure_builder.build_nodes(),
-    procedure_edges=procedure_builder.build_edges(),
-    procedure_objects=procedure_builder.get_object_map(),
-    title="Battery Cycling Dashboard — Maccor Export",
-)
-
 view.servable()
