@@ -13,15 +13,11 @@ The story the GIF tells (a fuller walk-through than the Maccor demo):
   5. Put ``current`` on the y2 (right) axis in Axes & Units -> a second axis
      appears with the current traces.
   6. Switch the current unit from A to mA -> the right axis rescales.
-  7. Freeze the busy plot -> a static snapshot is pinned below the live one.
-  8. Re-select in the live plot: only the Prismatic cell (Cell C) and only the
-     Formation Test -> the active plot collapses to a single Cell C trace,
-     contrasting with the frozen busy snapshot above it.
-  9. Unfreeze the snapshot -> it becomes active again (restoring the busy
-     round-cells selection into the sidebar) and the Cell C plot freezes.
+  7. Re-select: only the Prismatic cell (Cell C) and only the Formation Test
+     -> the plot updates to a single Cell C trace.
 
 Cell C (Prismatic) has only a Formation test in the sample data, so Formation
-is the procedure paired with it in step 8.
+is the procedure paired with it in step 7.
 
 Prerequisites:
     pip install -e ".[docs]"      # playwright + imageio
@@ -38,7 +34,6 @@ from _screenshot_utils import (
     capture,
     click_tree_checkbox,
     open_sidebar,
-    real_click_by_text,
     set_axis,
     set_unit,
     start_server,
@@ -110,10 +105,6 @@ def main():
             capture(page, frames, 2500)  # right axis rescales
             plot_frame = frames[-1]
 
-            print("Freeze the busy plot...")
-            print("  freeze:", real_click_by_text(page, "Freeze plot"))
-            capture(page, frames, 2000)  # snapshot pinned below the live plot
-
             print("Re-select: only the Prismatic cell (Cell C)...")
             print(
                 "  uncheck round:", click_tree_checkbox(page, CELL_TREE, CYLINDRICAL_CB)
@@ -124,11 +115,7 @@ def main():
             print("Re-select: only the Formation Test...")
             print("  clear procs:", click_tree_checkbox(page, PROC_TREE, PROC_ROOT_CB))
             print("  formation:", click_tree_checkbox(page, PROC_TREE, FORMATION_CB))
-            capture(page, frames, 3000)  # active plot collapses to one Cell C trace
-
-            print("Unfreeze the previous (busy) plot...")
-            print("  unfreeze:", real_click_by_text(page, "Unfreeze"))
-            capture(page, frames, 2500)  # busy selection restored as active
+            capture(page, frames, 3000)  # plot updates to one Cell C trace
             capture(page, frames, 1500)  # hold on the final result
     finally:
         stop_server(proc)

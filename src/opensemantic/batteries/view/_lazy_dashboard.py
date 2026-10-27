@@ -9,7 +9,7 @@ Unlike the base view (everything in memory up front), nothing is held eagerly:
 each tree starts as a single collapsed root category and only asks the backend
 for a node's children when the user expands it. Selecting cells + procedures
 asks the backend for the matching cycling datasets, which are then plotted
-through the base view's unchanged axis / unit / freeze pipeline.
+through the base view's unchanged axis / unit / plot pipeline.
 
 Category checkboxes cascade: ticking a category (e.g. ``CylindricalCell``)
 eagerly walks the backend down to the leaves and selects **every** descendant
@@ -49,8 +49,8 @@ class LazyBatteryDataView(BatteryDataView):
       which the backend's :meth:`~BatteryDataBackend.datasets` repopulates on
       every selection change.
 
-    Everything downstream of the selection — axis grid, unit dropdowns, plot,
-    freeze / unfreeze — is inherited unchanged.
+    Everything downstream of the selection (axis grid, unit dropdowns, plot)
+    is inherited unchanged.
     """
 
     def __init__(
@@ -130,9 +130,8 @@ class LazyBatteryDataView(BatteryDataView):
     # -- Lazy trees ----------------------------------------------------------
 
     def _build_cell_tree(self, nodes: Dict, edges: List) -> None:
-        self._cell_tree_title = "Cell"
         self._cell_tree = self._make_lazy_tree(
-            "cell", self._backend.cell_root, self._cell_tree_title
+            "cell", self._backend.cell_root, "Cell"
         )
         self._cell_card = pn.Card(
             self._cell_tree,
@@ -143,9 +142,8 @@ class LazyBatteryDataView(BatteryDataView):
         )
 
     def _build_procedure_card(self, nodes: Dict, edges: List) -> None:
-        self._proc_tree_title = "Procedure"
         self._proc_tree = self._make_lazy_tree(
-            "proc", self._backend.procedure_root, self._proc_tree_title
+            "proc", self._backend.procedure_root, "Procedure"
         )
         self._proc_card = pn.Card(
             self._proc_tree,
@@ -236,8 +234,6 @@ class LazyBatteryDataView(BatteryDataView):
         descendant instance is set to match. Ticking ``CylindricalCell`` thus
         selects ``CellA`` + ``CellB``; unticking it clears them.
         """
-        if self._restoring:
-            return
         new_sel: Set[str] = set()
         present: Set[str] = set()
         self._collect_selected(event.new or [], new_sel, present)
@@ -425,51 +421,3 @@ class LazyBatteryDataView(BatteryDataView):
             if m["rows"]:
                 traces.append({"label": m["label"], "rows": m["rows"]})
         return traces
-
-    # -- Freeze/unfreeze: restore selection state without rebuilding trees ----
-
-    def _apply_state(self, state: Any) -> None:
-        """Restore a frozen plot's state, re-querying instead of rebuilding trees.
-
-        Lazy trees can't be repainted from a pristine full source (there isn't
-        one), so unfreeze restores the selected IRIs + axis/unit choices and
-        re-runs the query. The plot returns; the tree checkboxes are not
-        re-ticked (a deliberate simplification for the lazy layer).
-        """
-        self._restoring = True
-        try:
-            self._sel_instances = {
-                "cell": set(state.cell_ids),
-                "proc": set(state.proc_ids),
-            }
-            # Category-checked state isn't persisted (only instances are); the
-            # tree isn't re-ticked on restore anyway, so start it clean.
-            self._sel_classes = {"cell": set(), "proc": set()}
-            # Forget the browser's last-seen ticks too, so the next real toggle
-            # diffs against a clean slate rather than the pre-restore selection.
-            self._source_selected = {"cell": set(), "proc": set()}
-            self._expanded_classes = {"cell": set(), "proc": set()}
-            self._selected_cell_ids = list(state.cell_ids)
-            self._selected_proc_ids = list(state.proc_ids)
-            self._instance_selections = dict(state.instance_selections)
-            self._axis_map = dict(state.axis_map)
-            self._unit_selections = dict(state.unit_selections)
-            self._run_query()
-            self._refresh_instances()
-            self._sync_axis_grid()
-            self._sync_unit_selects()
-        finally:
-            self._restoring = False
-        self._build_figure()
-
-    def _state_summary(self, state: Any) -> str:
-        cells = [self._backend.page_name(c) for c in state.cell_ids]
-        procs = [self._backend.page_name(p) for p in state.proc_ids]
-        axis = state.axis_map
-        y = axis.get("y1") or "—"
-        if axis.get("y2"):
-            y = f"{y}+{axis['y2']}"
-        return (
-            f"{', '.join(cells) or '—'} / {', '.join(procs) or '—'} · "
-            f"{y} vs {axis.get('x') or '—'}"
-        )
