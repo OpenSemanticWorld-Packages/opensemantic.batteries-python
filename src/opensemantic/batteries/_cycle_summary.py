@@ -5,13 +5,14 @@ extensions: the world.opensemantic.batteries schema has no cycle table yet.
 Once it ships one, regenerate the models and remove this module.
 
 A summary has one row per cycle with the charge and the discharge capacity of
-that cycle and the two coulomb efficiencies derived from them (wide form). :func:`cycle_summary` builds it from the rows of a
-cycling dataset, using the ``step_type`` of each row to tell the charge step
-from the discharge step.
+that cycle and the two coulomb efficiencies derived from them (wide form).
+:func:`cycle_summary` builds it from the rows of a cycling dataset, using the
+``step_type`` of each row to tell the charge step from the discharge step.
 
 Layer note (see CLAUDE.md): Pydantic **v1**, like the cycling classes.
 """
 
+import math
 from typing import Dict, List, Optional, Union
 
 from opensemantic.base.v1 import Dataset
@@ -136,7 +137,8 @@ def cycle_summary(
     ) -> Optional[Efficiency]:
         if numerator is None or denominator is None or not denominator > 0:
             return None
-        return Efficiency(value=numerator / denominator)
+        ratio = numerator / denominator
+        return Efficiency(value=ratio) if math.isfinite(ratio) else None
 
     summary_rows = [
         CycleDataRow(
