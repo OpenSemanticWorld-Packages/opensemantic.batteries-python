@@ -419,5 +419,5 @@ class LazyBatteryDataView(BatteryDataView):
             if not self._instance_selections.get(m["idx"], True):
                 continue
             if m["rows"]:
-                traces.append({"label": m["label"], "rows": m["rows"]})
+                traces.append({"label": m["label"], "rows": m["rows"], "key": m["id"]})
         return traces

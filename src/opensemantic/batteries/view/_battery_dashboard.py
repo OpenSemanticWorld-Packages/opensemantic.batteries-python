@@ -179,6 +179,9 @@ class BatteryDataView(BaseDataView):
         # Checkbox widgets keyed by (field, axis) — radio enforcement via flag
         self._axis_checkboxes: Dict[Tuple[str, str], pn.widgets.Checkbox] = {}
         self._updating_checkboxes: bool = False
+        # Pint DataFrame per trace, kept across re-plots so a unit or axis
+        # change does not rebuild it: key -> (rows it was built from, frame)
+        self._df_cache: Dict[Any, Tuple[List[Any], Any]] = {}
 
         self._build_cell_tree(cell_nodes, cell_edges)
         self._build_procedure_card(procedure_nodes, procedure_edges)
@@ -692,11 +695,7 @@ class BatteryDataView(BaseDataView):
         """
         import pandas as pd
 
-        if "df" not in trace:
-            # cached as an explicit key: a failed conversion is None, and
-            # without the key it would be rebuilt once per field
-            trace["df"] = self._trace_df(trace)
-        df = trace["df"]
+        df = self._cached_trace_df(trace)
         if df is None or field not in df.columns:
             return None
 
@@ -712,6 +711,24 @@ class BatteryDataView(BaseDataView):
                     pass
         magnitudes = series.pint.magnitude
         return [None if pd.isna(v) else float(v) for v in magnitudes]
+
+    def _cached_trace_df(self, trace: Dict):
+        """The trace's pint DataFrame, built once per rows list.
+
+        The key is the trace's ``"key"`` (a stable dataset id) if it has one,
+        else the identity of its rows list. The frame is reused only while the
+        trace carries the same rows object it was built from, so new rows for a
+        known key replace the entry instead of returning a stale frame. A
+        failed conversion is cached as ``None`` too.
+        """
+        rows = trace.get("rows")
+        key = trace.get("key", id(rows))
+        hit = self._df_cache.get(key)
+        if hit is not None and hit[0] is rows:
+            return hit[1]
+        df = self._trace_df(trace)
+        self._df_cache[key] = (rows, df)
+        return df
 
     @staticmethod
     def _trace_df(trace: Dict):
