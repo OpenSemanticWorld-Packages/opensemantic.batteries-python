@@ -375,6 +375,13 @@ The view shows a single plot. It re-renders whenever the sidebar selection
 changes: the selected cells, procedures, per-instance toggles, axis assignment
 and unit choices.
 
+Below the time-series plot, a collapsible **Cycle Series** card plots the
+charge and discharge capacity and the two coulomb efficiencies per cycle for
+each dataset. Its controls are in the sidebar card **Cycle Series - Axes &
+Units**, a grid like the time-series one where y1 and y2 accept several fields
+of one dimension (capacity or efficiency) with one unit per axis. It needs the
+`step_type` of the rows and shows a placeholder without it.
+
 ```bash
 pip install opensemantic.batteries[view]
 panel serve examples/battery_dashboard.py --dev
@@ -474,6 +481,12 @@ TEST_OSL_DOMAIN=wiki-dev.open-semantic-lab.org   TEST_OSL_CRED_FILEPATH=examples
   files keep working if the field name and the enum values stay the same.
   `CyclingDatasetController.from_df` also drops empty object columns, because
   the base `from_df` fails on them. Remove that guard once base handles them.
+- **Add a cycle table to the schema**: `CycleDataRow`, `CycleSummaryDataset`
+  and `cycle_summary` in `_cycle_summary.py` are a temporary local schema. Add
+  the table to `world.opensemantic.batteries` in wide form (one row per cycle
+  with `charge_capacity`, `discharge_capacity`, `charge_coulomb_efficiency` and
+  `discharge_coulomb_efficiency`), regenerate the models, then remove the local
+  module.
 
 ## Note
 

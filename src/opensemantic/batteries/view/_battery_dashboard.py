@@ -6,10 +6,12 @@ Sidebar layout (top to bottom):
   - Procedure card: procedure tree; same fixed height as the cell card, scrolls
   - Instances card: live list of test runs matching the cell+procedure
                     selection; per-instance checkbox toggles whether it is plotted
-  - Axes & Units card: the axis/unit grid (below Instances)
+  - Time Series - Axes & Units card: the axis/unit grid (below Instances)
+  - Cycle Series - Axes & Units card: the axis/unit grid of the cycle plot
+                    (capacities and coulomb efficiencies per cycle)
   - Config card
 
-Axes & Units grid
+Time Series - Axes & Units grid
   rows = data fields (test_time, voltage, current, ...)
   cols = x | y1 | y2 | Unit
   Per-column radio: exactly one field per axis at a time.
@@ -21,6 +23,16 @@ Plot
   Single Bokeh figure, left y1 axis + optional right y2 axis.
   Both axis ranges are derived from data — 0 is never forced as baseline.
   The plot re-renders whenever the selection changes.
+
+Cycle series plot
+  Second collapsible card below the plot: the charge and discharge capacity of
+  every cycle (x = cycle number), one colour per trace, charge solid and
+  discharge dashed, capacities as circles and efficiencies as squares. The
+  values come from ``cycle_summary`` and need the ``step_type`` of the rows;
+  without it the card shows a placeholder.
+  The grid has the same layout as the time-series grid, but y1 and y2 accept
+  several fields. Fields on one axis share a dimension (capacity or
+  efficiency) and one unit; a field is on at most one axis.
 
 Uses BaseDataView mixin for shared plot / log / config cards.
 """
@@ -45,10 +57,16 @@ from opensemantic.base.view import (
     BaseViewConfig,
     get_available_units,
 )
+from opensemantic.batteries._cycle_summary import cycle_summary
 from opensemantic.batteries.view._battery_utils import (
     build_oold_tree_source,
     get_checked_instance_ids,
     set_selected_instances,
+)
+from opensemantic.characteristics.quantitative.v1 import (
+    Count,
+    Efficiency,
+    ElectricCharge,
 )
 
 _logger = logging.getLogger(__name__)
@@ -188,11 +206,14 @@ class BatteryDataView(BaseDataView):
         # Pint DataFrame per trace, kept across re-plots so a unit or axis
         # change does not rebuild it: key -> (rows it was built from, frame)
         self._df_cache: Dict[Any, Tuple[List[Any], Any]] = {}
+        # Cycle summary frame per trace, cached the same way
+        self._cycle_cache: Dict[Any, Tuple[List[Any], Any]] = {}
 
         self._build_cell_tree(cell_nodes, cell_edges)
         self._build_procedure_card(procedure_nodes, procedure_edges)
         self._build_instances_card()
         self._build_axis_card()
+        self._build_cycle_card()
         self._build_plot()
         self._build_log_console()
         self._build_config_editor()
@@ -303,9 +324,182 @@ class BatteryDataView(BaseDataView):
         """
         self._axis_card = pn.Card(
             self._build_axis_grid(),
-            title="Axes & Units",
+            title="Time Series - Axes & Units",
             collapsed=False,
         )
+
+    # -- Cycle series card ---------------------------------------------------
+
+    def _build_cycle_card(self) -> None:
+        """Controls card and plot card of the cycle series.
+
+        The controls (an axis/unit grid like the time-series one) redraw only
+        the cycle plot. The plot column is reassigned wholesale on every
+        redraw, like ``_plot_col``.
+        """
+        # field -> (dimension, characteristic class, default unit name)
+        self._cycle_specs: Dict[str, Tuple[str, type, str]] = {
+            "cycle_count": ("count", Count, ""),
+            "charge_capacity": ("capacity", ElectricCharge, "coulomb"),
+            "discharge_capacity": ("capacity", ElectricCharge, "coulomb"),
+            "charge_coulomb_efficiency": ("efficiency", Efficiency, "percent"),
+            "discharge_coulomb_efficiency": ("efficiency", Efficiency, "percent"),
+        }
+        self._cycle_unit_options: Dict[str, Dict[str, str]] = {}
+        self._cycle_units: Dict[str, str] = {}
+        for field, (_dim, char_cls, default) in self._cycle_specs.items():
+            if field == "cycle_count":
+                continue
+            units = get_available_units(_FieldChannel(field, char_cls))
+            self._cycle_unit_options[field] = {u["symbol"]: u["name"] for u in units}
+            names = [u["name"] for u in units]
+            self._cycle_units[field] = (
+                default if default in names else (names[0] if names else "")
+            )
+        # Fields on each axis, in tick order; one unit per axis
+        self._cycle_axis_fields: Dict[str, List[str]] = {
+            "y1": ["charge_capacity", "discharge_capacity"],
+            "y2": [],
+        }
+        self._cycle_checkboxes: Dict[Tuple[str, str], pn.widgets.Checkbox] = {}
+        self._cycle_unit_sels: Dict[str, pn.widgets.Select] = {}
+
+        self._cycle_axis_card = pn.Card(
+            self._build_cycle_grid(),
+            title="Cycle Series - Axes & Units",
+            collapsible=True,
+            collapsed=False,
+        )
+        self._cycle_col = pn.Column(
+            pn.pane.Markdown("_No cycle data._", margin=(10, 6)),
+            sizing_mode="stretch_width",
+        )
+        self._cycle_card = pn.Card(
+            self._cycle_col,
+            title="Cycle Series",
+            collapsible=True,
+            collapsed=False,
+            sizing_mode="stretch_width",
+        )
+
+    def _build_cycle_grid(self) -> pn.Column:
+        """Grid: rows = cycle fields, cols = x | y1 | y2 | Unit.
+
+        Same layout as the time-series grid. ``cycle_count`` is the fixed x
+        (checked, disabled); every other field can be on y1 or y2.
+        """
+        COL_W = 36
+        LABEL_W = 100
+
+        header = pn.Row(
+            pn.pane.Markdown("**Field**", width=LABEL_W),
+            pn.pane.Markdown("**x**", width=COL_W),
+            pn.pane.Markdown("**y1**", width=COL_W),
+            pn.pane.Markdown("**y2**", width=COL_W),
+            pn.pane.Markdown("**Unit**", width=80),
+        )
+        rows: List[Any] = [header]
+
+        for field in self._cycle_specs:
+            is_x = field == "cycle_count"
+            cbs = []
+            for ax in ("x", "y1", "y2"):
+                cb = pn.widgets.Checkbox(
+                    value=(is_x and ax == "x")
+                    or field in self._cycle_axis_fields.get(ax, []),
+                    width=COL_W,
+                    margin=(4, 2),
+                    # cycle_count is the fixed x and cannot be on y1 / y2
+                    disabled=(ax == "x") or is_x,
+                )
+                self._cycle_checkboxes[(field, ax)] = cb
+                cb.param.watch(
+                    lambda evt, f=field, a=ax: self._on_cycle_checkbox_change(
+                        f, a, evt.new
+                    ),
+                    ["value"],
+                )
+                cbs.append(cb)
+
+            opts = self._cycle_unit_options.get(field, {})
+            if opts:
+                unit_sel = pn.widgets.Select(
+                    options=opts,
+                    value=self._cycle_units[field],
+                    width=90,
+                    margin=(2, 2),
+                )
+                unit_sel.param.watch(
+                    lambda evt, f=field: self._on_cycle_unit_change(f, evt.new),
+                    ["value"],
+                )
+                self._cycle_unit_sels[field] = unit_sel
+            else:
+                unit_sel = pn.pane.Markdown("—", width=72)
+
+            rows.append(
+                pn.Row(
+                    pn.pane.Markdown(field, width=LABEL_W),
+                    *cbs,
+                    unit_sel,
+                    margin=(2, 0),
+                )
+            )
+
+        return pn.Column(*rows)
+
+    def _sync_cycle_widgets(self) -> None:
+        """Set the y1 / y2 checkboxes and unit Selects from the cycle state.
+
+        Runs under ``_updating_checkboxes`` so the watchers it triggers are
+        no-ops.
+        """
+        self._updating_checkboxes = True
+        try:
+            for (field, ax), cb in self._cycle_checkboxes.items():
+                if ax == "x":
+                    continue
+                expected = field in self._cycle_axis_fields.get(ax, [])
+                if cb.value != expected:
+                    cb.value = expected
+            for field, sel in self._cycle_unit_sels.items():
+                if sel.value != self._cycle_units[field]:
+                    sel.value = self._cycle_units[field]
+        finally:
+            self._updating_checkboxes = False
+
+    def _on_cycle_checkbox_change(self, field: str, axis: str, checked: bool) -> None:
+        if self._updating_checkboxes:
+            return
+        fields = self._cycle_axis_fields
+        if checked:
+            other = "y2" if axis == "y1" else "y1"
+            if field in fields[other]:
+                fields[other].remove(field)
+            if field not in fields[axis]:
+                dim = self._cycle_specs[field][0]
+                # fields on one axis share a dimension; else the new one replaces
+                if any(self._cycle_specs[f][0] != dim for f in fields[axis]):
+                    fields[axis] = []
+                if fields[axis]:
+                    # one unit per axis: take the unit of the fields already there
+                    self._cycle_units[field] = self._cycle_units[fields[axis][0]]
+                fields[axis].append(field)
+        elif field in fields[axis]:
+            fields[axis].remove(field)
+        self._sync_cycle_widgets()
+        self._build_cycle_figure()
+
+    def _on_cycle_unit_change(self, field: str, unit: str) -> None:
+        if self._updating_checkboxes:
+            return
+        self._cycle_units[field] = unit
+        for members in self._cycle_axis_fields.values():
+            if field in members:
+                for f in members:
+                    self._cycle_units[f] = unit
+        self._sync_cycle_widgets()
+        self._build_cycle_figure()
 
     def _build_axis_grid(self) -> pn.Column:
         """Grid: rows = fields, cols = x | y1 | y2 | Unit.
@@ -390,11 +584,11 @@ class BatteryDataView(BaseDataView):
                 cb.value = expected
         self._updating_checkboxes = False
 
-        self._build_figure()
+        self._build_time_series_figure()
 
     def _on_unit_change(self, field: str, unit: str) -> None:
         self._unit_selections[field] = unit
-        self._build_figure()
+        self._build_time_series_figure()
 
     # -- Instances card ------------------------------------------------------
 
@@ -816,7 +1010,12 @@ class BatteryDataView(BaseDataView):
         pass
 
     def _build_figure(self) -> None:
-        """Re-render the single plot from the current selection.
+        """Re-render the time-series plot and the cycle plot."""
+        self._build_time_series_figure()
+        self._build_cycle_figure()
+
+    def _build_time_series_figure(self) -> None:
+        """Re-render the time-series plot from the current selection.
 
         Reassigning ``_plot_col.objects`` wholesale is what makes the
         browser pane refresh immediately (an in-place ``col[i] = x`` mutation
@@ -953,6 +1152,158 @@ class BatteryDataView(BaseDataView):
         fig.legend.click_policy = "hide"
         return fig
 
+    # -- Cycle series --------------------------------------------------------
+
+    def _cached_cycle_df(self, trace: Dict):
+        """The trace's cycle summary as a pint DataFrame, built once per rows list.
+
+        Cached like :meth:`_cached_trace_df`: keyed by the trace's ``"key"`` or
+        the identity of its rows, reused only while the trace carries the same
+        rows object. ``None`` when the rows give no cycle table.
+        """
+        rows = trace.get("rows")
+        key = trace.get("key", id(rows))
+        hit = self._cycle_cache.get(key)
+        if hit is not None and hit[0] is rows:
+            return hit[1]
+        df = self._cycle_df(trace)
+        self._cycle_cache[key] = (rows, df)
+        return df
+
+    @staticmethod
+    def _cycle_df(trace: Dict):
+        """The cycle summary of the trace's rows as a frame, or ``None``."""
+        rows = trace.get("rows") or []
+        if not rows:
+            return None
+        try:
+            summary = cycle_summary(rows, label=trace.get("label") or "trace")
+            return summary.to_df() if summary.data else None
+        except Exception:  # noqa: BLE001 - rows without cycle data
+            return None
+
+    def _cycle_series(self, trace: Dict, column: str, unit_name: Optional[str]):
+        """``(cycles, values)`` of a summary column in the unit, or ``None``.
+
+        Cycles whose value is missing are left out; ``None`` when no cycle
+        has a value.
+        """
+        import pandas as pd
+
+        df = self._cached_cycle_df(trace)
+        if df is None or column not in df.columns or not hasattr(df[column], "pint"):
+            return None
+        series = df[column]
+        char_cls = self._cycle_specs[column][1]
+        if unit_name:
+            try:
+                series = series.pint.to(
+                    char_cls.get_pint_ureg_compatible_str(unit_name)
+                )
+            except Exception:  # noqa: BLE001 - bad unit: keep the stored unit
+                pass
+        cycles = df["cycle_count"].pint.magnitude
+        pairs = [
+            (float(c), float(v))
+            for c, v in zip(cycles, series.pint.magnitude)
+            if not pd.isna(c) and not pd.isna(v)
+        ]
+        if not pairs:
+            return None
+        xs, ys = zip(*pairs)
+        return list(xs), list(ys)
+
+    def _cycle_axis_label(self, axis: str) -> str:
+        """``"field1, field2 [unit]"`` of the fields on an axis."""
+        fields = self._cycle_axis_fields[axis]
+        opts = self._cycle_unit_options.get(fields[0], {})
+        name = self._cycle_units.get(fields[0])
+        symbol = next((s for s, n in opts.items() if n == name), None)
+        text = ", ".join(fields)
+        return f"{text} [{symbol}]" if symbol else text
+
+    def _make_cycle_figure(self):
+        """Build the cycle figure from the current selection, or ``None``.
+
+        One series per (trace, field) on y1 / y2. ``None`` when no field is on
+        an axis or no series can be drawn. Colours follow the trace order of
+        the time-series figure; charge fields are solid, discharge dashed;
+        capacities use circles and efficiencies squares.
+        """
+        if not any(self._cycle_axis_fields.values()):
+            return None
+
+        drawn: Dict[str, List[Any]] = {"y1": [], "y2": []}
+        for i, trace in enumerate(self._resolve_traces()):
+            for axis in ("y1", "y2"):
+                for field in self._cycle_axis_fields[axis]:
+                    data = self._cycle_series(trace, field, self._cycle_units[field])
+                    if data is not None:
+                        drawn[axis].append((i, trace, field, data))
+        if not drawn["y1"] and not drawn["y2"]:
+            return None
+
+        fig = bk_figure(
+            height=350,
+            sizing_mode="stretch_width",
+            x_axis_label="cycle_count",
+            tools="pan,wheel_zoom,box_zoom,reset,save",
+        )
+        if drawn["y1"]:
+            fig.yaxis[0].axis_label = self._cycle_axis_label("y1")
+        else:
+            fig.yaxis[0].visible = False
+        if drawn["y2"]:
+            rng = self._data_range([d[3][1] for d in drawn["y2"]])
+            fig.extra_y_ranges = {"y2": Range1d(*rng)}
+            fig.add_layout(
+                LinearAxis(y_range_name="y2", axis_label=self._cycle_axis_label("y2")),
+                "right",
+            )
+
+        for axis in ("y1", "y2"):
+            y_kwargs = {"y_range_name": "y2"} if axis == "y2" else {}
+            for i, trace, field, (xs, ys) in drawn[axis]:
+                color = COLORS[i % len(COLORS)]
+                source = ColumnDataSource({"x": xs, "y": ys})
+                label = f"{trace['label']} {field}"
+                dash = "solid" if field.startswith("charge") else "dashed"
+                is_capacity = self._cycle_specs[field][0] == "capacity"
+                fig.line(
+                    "x",
+                    "y",
+                    source=source,
+                    legend_label=label,
+                    color=color,
+                    line_width=2,
+                    line_dash=dash,
+                    **y_kwargs,
+                )
+                fig.scatter(
+                    "x",
+                    "y",
+                    source=source,
+                    legend_label=label,
+                    color=color,
+                    marker="circle" if is_capacity else "square",
+                    size=6,
+                    **y_kwargs,
+                )
+
+        fig.legend.click_policy = "hide"
+        return fig
+
+    def _build_cycle_figure(self) -> None:
+        """Re-render the cycle plot (the column is reassigned wholesale)."""
+        if not hasattr(self, "_cycle_col"):
+            return  # _build_cycle_card has not run yet
+        fig = self._make_cycle_figure()
+        self._cycle_col.objects = [
+            pn.pane.Bokeh(fig, sizing_mode="stretch_width")
+            if fig is not None
+            else pn.pane.Markdown("_No cycle data._", margin=(10, 6))
+        ]
+
     def _build_plot(self) -> None:
         """Override BaseDataView: render the initial plot into ``_plot_col``."""
         super()._build_plot()  # sets self._plot_col + self._plot_card
@@ -1013,9 +1364,10 @@ class BatteryDataView(BaseDataView):
             self._proc_card,
             self._instances_card,
             self._axis_card,
+            self._cycle_axis_card,
             self._config_card,
         ]
 
     @property
     def main_cards(self) -> List[Any]:
-        return [self._plot_card, self._log_card]
+        return [self._plot_card, self._cycle_card, self._log_card]

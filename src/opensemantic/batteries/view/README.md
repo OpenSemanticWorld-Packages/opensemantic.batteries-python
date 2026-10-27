@@ -208,24 +208,51 @@ shared matching logic lives in `_matching_tests()`, used by both the card and
 ### Sidebar order & card heights
 
 The sidebar cards (`sidebar_cards`) are, top to bottom: **Cells**,
-**Procedures**, **Instances**, **Axes & Units**, **Configuration**. The Cell and
+**Procedures**, **Instances**, **Time Series - Axes & Units**, **Cycle Series -
+Axes & Units**, **Configuration**. The Cell and
 Procedure tree cards share a fixed height (`_TREE_CARD_HEIGHT`) and scroll, so
 they sit level regardless of how deep either tree is. The axis / unit grid is its
-own **Axes & Units** card (`_build_axis_card`, wiring `_axis_checkboxes`)
-placed below the Instances card — not nested under the Procedure tree.
+own **Time Series - Axes & Units** card (`_build_axis_card`, wiring
+`_axis_checkboxes`) placed below the Instances card, not nested under the
+Procedure tree. The **Cycle Series - Axes & Units** card (`_build_cycle_card`)
+holds a grid with the same layout as the time-series grid
+(`_build_cycle_grid`, wiring `_cycle_checkboxes`). Its rows are `cycle_count`
+(the fixed x: checked and disabled), `charge_capacity`, `discharge_capacity`,
+`charge_coulomb_efficiency` and `discharge_coulomb_efficiency`. The state is in
+`_cycle_axis_fields` (fields per axis, y1 and y2) and `_cycle_units`. The
+rules:
 
-### Single plot
+- A field is on at most one axis: ticking y2 unticks its y1 and the reverse.
+- Several fields may share an axis if they have the same dimension (capacity
+  or efficiency). Ticking a field of the other dimension removes the fields
+  already on that axis.
+- One unit per axis: a newly ticked field takes the unit of the fields already
+  on the axis, and a unit change applies to all fields on that axis. The
+  widgets are updated under `_updating_checkboxes`, so the watchers do not
+  recurse. A unit change of a field on no axis is only stored.
+- Defaults: both capacities on y1 (coulomb), y2 empty. Efficiencies are shown
+  in percent by default.
 
-The view holds one plot, in `self._plot_col` (the base class column inside the
-plot card). `_make_figure()` returns a Bokeh figure or `None`, and
-`_build_figure()` reassigns `self._plot_col.objects` wholesale to either
-the new Bokeh pane or a "No data selected" placeholder. The wholesale
-reassignment, which is also how Panelini syncs its own panes, makes the browser
-pane repaint immediately on a selection change, rather than lagging a render
-until the next interaction.
+The main cards (`main_cards`) are the
+time-series plot card, the collapsible **Cycle Series** card and the log card.
 
-Every selection watcher (`_on_tree_change`, `_on_instance_source_change`,
-`_on_checkbox_change`, `_on_unit_change`) ends in `_build_figure()`. The
+### Plots
+
+The view holds two plots. The time-series plot is in `self._plot_col` (the base
+class column inside the plot card). `_make_figure()` returns a Bokeh figure or
+`None`, and `_build_time_series_figure()` reassigns `self._plot_col.objects`
+wholesale to either the new Bokeh pane or a "No data selected" placeholder. The
+cycle plot is in `self._cycle_col` (inside the Cycle Series card):
+`_make_cycle_figure()` and `_build_cycle_figure()` work the same way, with a
+"No cycle data" placeholder. The wholesale reassignment, which is also how
+Panelini syncs its own panes, makes the browser pane repaint immediately on a
+selection change, rather than lagging a render until the next interaction.
+
+The selection watchers (`_on_tree_change`, `_on_instance_source_change`) end in
+`_build_figure()`, which rebuilds both plots. A time-series axis or unit change
+(`_on_checkbox_change`, `_on_unit_change`) calls only
+`_build_time_series_figure()`, and a cycle control change calls only
+`_build_cycle_figure()`. The
 instances card swaps in a fresh tree widget (`card[0] = new_tree`) instead of
 reassigning `tree.source`, because Wunderbaum can swallow an in-place `source`
 update when the last tree edit came from the browser.
