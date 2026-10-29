@@ -45,7 +45,7 @@ class _Dataset(Item):
 
 class _Test(AnalyticalLaboratoryProcess):
     protocol: Optional[ElectrochemicalTestProcedure] = None
-    output: Optional[_Dataset] = None
+    output: Optional[List[_Dataset]] = None
 
 
 def _dataset(name: str) -> _Dataset:
@@ -82,19 +82,19 @@ def make_view() -> BatteryDataView:
             label=[Label(text="Cell A - Aging (A)")],
             device_under_test=[cell_a],
             protocol=aging_a,
-            output=_dataset("Cell A - Aging (A) Dataset"),
+            output=[_dataset("Cell A - Aging (A) Dataset")],
         ),
         _Test(
             label=[Label(text="Cell A - Formation")],
             device_under_test=[cell_a],
             protocol=formation,
-            output=_dataset("Cell A - Formation Dataset"),
+            output=[_dataset("Cell A - Formation Dataset")],
         ),
         _Test(
             label=[Label(text="Cell B - Formation")],
             device_under_test=[cell_b],
             protocol=formation,
-            output=_dataset("Cell B - Formation Dataset"),
+            output=[_dataset("Cell B - Formation Dataset")],
         ),
     ]
 
