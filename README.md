@@ -382,6 +382,17 @@ Units**, a grid like the time-series one where y1 and y2 accept several fields
 of one dimension (capacity or efficiency) with one unit per axis. It needs the
 `step_type` of the rows and shows a placeholder without it.
 
+The sidebar card **Batches** groups the plotted datasets into named
+batches. **Cell batches** groups by the lowest category of the cell
+and **Procedure batches** by the procedure; each dataset also has a
+dropdown to move it to another batch or to "(none)", and a text field
+adds a batch. A second collapsible card, **Batch Series**, plots the
+mean of the capacities and efficiencies per cycle for each batch. The
+error bars are the sample standard deviation and appear where at least
+two datasets have a value for the cycle. Its controls are in the
+sidebar card **Batch Series - Axes & Units**, the same grid as for the
+cycle series.
+
 ```bash
 pip install opensemantic.batteries[view]
 panel serve examples/battery_dashboard.py --dev
@@ -487,6 +498,12 @@ TEST_OSL_DOMAIN=wiki-dev.open-semantic-lab.org   TEST_OSL_CRED_FILEPATH=examples
   with `charge_capacity`, `discharge_capacity`, `charge_coulomb_efficiency` and
   `discharge_coulomb_efficiency`), regenerate the models, then remove the local
   module.
+- **Provide `cell_iri` and `procedure_iri` per dataset in the OSL
+  backend**: `Dataset` has the optional fields `cell_iri` and
+  `procedure_iri`, which the Batches card uses to suggest batches. The
+  OSL backend does not fill them yet, because its combined query loses
+  the cell and procedure pair of a dataset. Until it does, the batch
+  suggestions put the OSL datasets in "(none)".
 
 ## Note
 

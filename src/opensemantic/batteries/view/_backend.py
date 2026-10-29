@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, List
+from typing import Any, List, Optional
 
 
 @dataclass(frozen=True)
@@ -55,12 +55,16 @@ class Dataset:
     ``rows`` are the typed row objects the view plots (instances of the
     backend's :attr:`~BatteryDataBackend.row_class`). ``id`` is a stable,
     de-duplicated identifier; ``label`` is what the Instances card and plot
-    legend show.
+    legend show. ``cell_iri`` and ``procedure_iri`` name the cell and the
+    procedure the dataset belongs to; the Batches card uses them to suggest
+    batches. A backend that cannot tell leaves them ``None``.
     """
 
     id: str
     label: str
     rows: List[Any] = field(default_factory=list)
+    cell_iri: Optional[str] = None
+    procedure_iri: Optional[str] = None
 
 
 class BatteryDataBackend(ABC):

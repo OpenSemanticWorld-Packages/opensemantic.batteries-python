@@ -209,17 +209,18 @@ shared matching logic lives in `_matching_tests()`, used by both the card and
 
 The sidebar cards (`sidebar_cards`) are, top to bottom: **Cells**,
 **Procedures**, **Instances**, **Time Series - Axes & Units**, **Cycle Series -
-Axes & Units**, **Configuration**. The Cell and
+Axes & Units**, **Batches**, **Batch Series - Axes & Units**, **Configuration**. The Cell and
 Procedure tree cards share a fixed height (`_TREE_CARD_HEIGHT`) and scroll, so
 they sit level regardless of how deep either tree is. The axis / unit grid is its
 own **Time Series - Axes & Units** card (`_build_axis_card`, wiring
 `_axis_checkboxes`) placed below the Instances card, not nested under the
 Procedure tree. The **Cycle Series - Axes & Units** card (`_build_cycle_card`)
-holds a grid with the same layout as the time-series grid
-(`_build_cycle_grid`, wiring `_cycle_checkboxes`). Its rows are `cycle_count`
+holds a grid with the same layout as the time-series grid. The grid is the
+class `_CycleGrid` (`self._cycle_grid`), which owns the widgets and the
+state and takes a redraw callback. Its rows are `cycle_count`
 (the fixed x: checked and disabled), `charge_capacity`, `discharge_capacity`,
 `charge_coulomb_efficiency` and `discharge_coulomb_efficiency`. The state is in
-`_cycle_axis_fields` (fields per axis, y1 and y2) and `_cycle_units`. The
+`axis_fields` (fields per axis, y1 and y2) and `units` of the grid. The
 rules:
 
 - A field is on at most one axis: ticking y2 unticks its y1 and the reverse.
@@ -228,17 +229,56 @@ rules:
   already on that axis.
 - One unit per axis: a newly ticked field takes the unit of the fields already
   on the axis, and a unit change applies to all fields on that axis. The
-  widgets are updated under `_updating_checkboxes`, so the watchers do not
+  widgets are updated under the grid's `_updating` flag, so the watchers do not
   recurse. A unit change of a field on no axis is only stored.
 - Defaults: both capacities on y1 (coulomb), y2 empty. Efficiencies are shown
   in percent by default.
 
-The main cards (`main_cards`) are the
-time-series plot card, the collapsible **Cycle Series** card and the log card.
+The **Batch Series - Axes & Units** card holds a second `_CycleGrid`
+(`self._batch_grid`) with the same rows, rules and defaults; only its redraw
+callback differs (`_build_batch_figure`).
+
+The main cards (`main_cards`) are the time-series plot card, the collapsible
+**Cycle Series** card, the collapsible **Batch Series** card and the log card.
+
+### Batches card
+
+`Dataset` (and the match dict of the lazy view) carries the optional
+`cell_iri` and `procedure_iri`. `_dataset_records()` returns one record per
+ticked match with the key, label, cell IRI, cell category `(iri, label)`,
+procedure IRI and procedure label (`None` for unknown values). The lazy view
+takes the cell category from `_parent_of`, the direct parent category that
+`_descendants` and `_lazy_children` record while the tree is walked (the
+first parent found wins), and the labels from `backend.page_name`. The
+non-lazy view uses the class of the first device under test and the first
+procedure IRI of the test. A backend that leaves the IRIs empty gives
+"(none)" in the suggestions.
+
+- **Cell batches** and **Procedure batches** replace all assignments with the
+  groups of that rule (cell category label or procedure label) and keep the
+  rule. They also replace the list of batch names, so names added by hand are
+  dropped. Datasets without the needed value go to "(none)".
+- Each ticked dataset has a row with a Select of the batch names and
+  "(none)". **Add batch** adds a name from the text field (an empty or
+  duplicate name is ignored) and appends it. A name stays an option when it has
+  no member, but a batch without a member is not plotted. The y ranges of the
+  batch plot are explicit and cover mean +/- std, because Bokeh's auto range
+  ignores the whiskers.
+- On a selection or instances change, `_refresh_batches()` keeps the batch of
+  every known dataset key (also while it is unticked). A new key joins the
+  batch the last rule gives it, else "(none)". The rows are rebuilt.
+- The batch plot aggregates the cycle tables of the members
+  (`_cached_cycle_df`, key = dataset key) with `aggregate_batch` in
+  `_batch_summary.py`: mean over the members that have a value for the cycle
+  and the sample standard deviation (`ddof=1`) for two or more. Mean and
+  standard deviation are converted to the selected unit afterwards, in the
+  stored unit before (coulomb, dimensionless ratio).
 
 ### Plots
 
-The view holds two plots. The time-series plot is in `self._plot_col` (the base
+The view holds three plots. The batch plot is in `self._batch_col`, built by
+`_make_batch_figure()` and `_build_batch_figure()` like the cycle plot, with a
+"No batch data" placeholder. The time-series plot is in `self._plot_col` (the base
 class column inside the plot card). `_make_figure()` returns a Bokeh figure or
 `None`, and `_build_time_series_figure()` reassigns `self._plot_col.objects`
 wholesale to either the new Bokeh pane or a "No data selected" placeholder. The
@@ -249,10 +289,12 @@ Panelini syncs its own panes, makes the browser pane repaint immediately on a
 selection change, rather than lagging a render until the next interaction.
 
 The selection watchers (`_on_tree_change`, `_on_instance_source_change`) end in
-`_build_figure()`, which rebuilds both plots. A time-series axis or unit change
+`_build_figure()`, which rebuilds the three plots and the batch rows. A
+time-series axis or unit change
 (`_on_checkbox_change`, `_on_unit_change`) calls only
-`_build_time_series_figure()`, and a cycle control change calls only
-`_build_cycle_figure()`. The
+`_build_time_series_figure()`, a cycle control change calls only
+`_build_cycle_figure()`, and a batch grid control change or a batch edit calls
+only `_build_batch_figure()`. The
 instances card swaps in a fresh tree widget (`card[0] = new_tree`) instead of
 reassigning `tree.source`, because Wunderbaum can swallow an in-place `source`
 update when the last tree edit came from the browser.

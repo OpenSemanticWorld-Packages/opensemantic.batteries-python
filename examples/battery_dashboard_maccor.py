@@ -118,6 +118,8 @@ class MaccorBatteryBackend(BatteryDataBackend):
                             id=f"{c}|{p}",
                             label=f"{self.page_name(c)} - {self.page_name(p)}",
                             rows=_rows(path),
+                            cell_iri=c,
+                            procedure_iri=p,
                         )
                     )
         return out

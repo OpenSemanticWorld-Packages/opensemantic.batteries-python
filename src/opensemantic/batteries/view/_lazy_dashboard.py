@@ -80,6 +80,9 @@ class LazyBatteryDataView(BatteryDataView):
         # class IRI -> (descendant class IRIs, descendant instance IRIs), memoised;
         # the recursive backend walk is the expensive part of a cascade.
         self._descendant_cache: Dict[str, Tuple[List[str], List[str]]] = {}
+        # node IRI -> IRI of its direct parent category, recorded while the trees
+        # are walked or expanded (the first parent found wins)
+        self._parent_of: Dict[str, str] = {}
         # Per-tree set of node keys currently ticked *in the browser* (i.e. present
         # with ``selected: true`` in the serialised ``source``). Diffing this on
         # every ``source`` change is how a user toggle is detected — see
@@ -217,9 +220,10 @@ class LazyBatteryDataView(BatteryDataView):
         (further lazy class nodes) and instances (checkable leaves), each
         rendered against *which* tree's current selection.
         """
-        return [
-            self._wb_node(which, child) for child in self._backend.children(node_key)
-        ]
+        children = self._backend.children(node_key)
+        for child in children:
+            self._parent_of.setdefault(child.iri, node_key)
+        return [self._wb_node(which, child) for child in children]
 
     # -- Selection -> query -> plot ------------------------------------------
 
@@ -372,6 +376,7 @@ class LazyBatteryDataView(BatteryDataView):
                     continue  # guard against cycles / diamond hierarchies
                 seen.add(child.iri)
                 self._node_kind[child.iri] = child.kind
+                self._parent_of.setdefault(child.iri, iri)
                 if child.kind == "instance":
                     instances.append(child.iri)
                 else:
@@ -404,7 +409,14 @@ class LazyBatteryDataView(BatteryDataView):
             self._selected_cell_ids, self._selected_proc_ids
         )
         self._matches = [
-            {"idx": i, "id": ds.id, "label": ds.label, "rows": ds.rows}
+            {
+                "idx": i,
+                "id": ds.id,
+                "label": ds.label,
+                "rows": ds.rows,
+                "cell_iri": ds.cell_iri,
+                "procedure_iri": ds.procedure_iri,
+            }
             for i, ds in enumerate(datasets)
         ]
 
@@ -412,6 +424,35 @@ class LazyBatteryDataView(BatteryDataView):
 
     def _matching_tests(self) -> List[Dict]:
         return self._matches
+
+    def _dataset_records(self) -> List[Dict]:
+        """One record per ticked match, from the backend's ``Dataset`` fields.
+
+        The cell category is the direct parent category recorded while the cell
+        tree was walked; the labels come from ``backend.page_name``.
+        """
+        records = []
+        for m in self._matching_tests():
+            if not self._instance_selections.get(m["idx"], True):
+                continue
+            cell_iri = m.get("cell_iri")
+            proc_iri = m.get("procedure_iri")
+            parent = self._parent_of.get(cell_iri) if cell_iri else None
+            records.append(
+                {
+                    "key": m["id"],
+                    "label": m["label"],
+                    "cell_iri": cell_iri,
+                    "cell_category": (
+                        (parent, self._backend.page_name(parent)) if parent else None
+                    ),
+                    "procedure_iri": proc_iri,
+                    "procedure_label": (
+                        self._backend.page_name(proc_iri) if proc_iri else None
+                    ),
+                }
+            )
+        return records
 
     def _resolve_traces(self) -> List[Dict]:
         traces: List[Dict] = []

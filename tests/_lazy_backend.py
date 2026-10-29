@@ -107,6 +107,8 @@ class MemoryBatteryBackend(BatteryDataBackend):
                             id=f"{c}|{p}",
                             label=f"{self.page_name(c)} - {self.page_name(p)}",
                             rows=_rows(),
+                            cell_iri=c,
+                            procedure_iri=p,
                         )
                     )
         return out

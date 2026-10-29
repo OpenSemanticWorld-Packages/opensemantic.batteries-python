@@ -9,6 +9,8 @@ Sidebar layout (top to bottom):
   - Time Series - Axes & Units card: the axis/unit grid (below Instances)
   - Cycle Series - Axes & Units card: the axis/unit grid of the cycle plot
                     (capacities and coulomb efficiencies per cycle)
+  - Batches card:   assigns every plotted dataset to a named batch
+  - Batch Series - Axes & Units card: the same grid for the batch plot
   - Config card
 
 Time Series - Axes & Units grid
@@ -34,6 +36,13 @@ Cycle series plot
   several fields. Fields on one axis share a dimension (capacity or
   efficiency) and one unit; a field is on at most one axis.
 
+Batch series plot
+  Third collapsible card: the mean of the cycle values over the datasets of
+  each batch, with the sample standard deviation as error bars (only where a
+  cycle has at least two values). The Batches card suggests batches from the
+  cell category or the procedure of each dataset and lets the user move
+  datasets between batches. A dataset in "(none)" is not plotted.
+
 Uses BaseDataView mixin for shared plot / log / config cards.
 """
 
@@ -42,10 +51,17 @@ from __future__ import annotations
 import logging
 from enum import Enum
 from functools import partial
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import panel as pn
-from bokeh.models import ColumnDataSource, FixedTicker, LinearAxis, Range1d
+from bokeh.models import (
+    ColumnDataSource,
+    FixedTicker,
+    HoverTool,
+    LinearAxis,
+    Range1d,
+    Whisker,
+)
 from bokeh.plotting import figure as bk_figure
 from panelini import Panelini
 from panelini.panels.jsoneditor import JsonEditor
@@ -57,6 +73,7 @@ from opensemantic.base.view import (
     BaseViewConfig,
     get_available_units,
 )
+from opensemantic.batteries._batch_summary import aggregate_batch
 from opensemantic.batteries._cycle_summary import cycle_summary
 from opensemantic.batteries.view._battery_utils import (
     build_oold_tree_source,
@@ -101,6 +118,177 @@ class _FieldChannel:
             if hasattr(char_cls, "get_cls_iri")
             else {}
         )
+
+
+class _CycleGrid:
+    """State and widgets of one cycle axis/unit grid.
+
+    The cycle plot and the batch plot each own one instance. Rows are the cycle
+    fields, columns are x | y1 | y2 | Unit. ``cycle_count`` is the fixed x.
+    Fields on one axis share a dimension (capacity or efficiency) and one unit,
+    and a field is on at most one axis. ``redraw`` is called after every change
+    the user makes in the grid.
+    """
+
+    # field -> (dimension, characteristic class, default unit name)
+    SPECS: Dict[str, Tuple[str, type, str]] = {
+        "cycle_count": ("count", Count, ""),
+        "charge_capacity": ("capacity", ElectricCharge, "coulomb"),
+        "discharge_capacity": ("capacity", ElectricCharge, "coulomb"),
+        "charge_coulomb_efficiency": ("efficiency", Efficiency, "percent"),
+        "discharge_coulomb_efficiency": ("efficiency", Efficiency, "percent"),
+    }
+
+    def __init__(self, redraw: Callable[[], None]):
+        self.redraw = redraw
+        self.specs = self.SPECS
+        self.unit_options: Dict[str, Dict[str, str]] = {}
+        self.units: Dict[str, str] = {}
+        for field, (_dim, char_cls, default) in self.specs.items():
+            if field == "cycle_count":
+                continue
+            units = get_available_units(_FieldChannel(field, char_cls))
+            self.unit_options[field] = {u["symbol"]: u["name"] for u in units}
+            names = [u["name"] for u in units]
+            self.units[field] = (
+                default if default in names else (names[0] if names else "")
+            )
+        # Fields on each axis, in tick order; one unit per axis
+        self.axis_fields: Dict[str, List[str]] = {
+            "y1": ["charge_capacity", "discharge_capacity"],
+            "y2": [],
+        }
+        self.checkboxes: Dict[Tuple[str, str], pn.widgets.Checkbox] = {}
+        self.unit_sels: Dict[str, pn.widgets.Select] = {}
+        self._updating = False
+        self.panel = self._build()
+
+    def _build(self) -> pn.Column:
+        """Grid: rows = cycle fields, cols = x | y1 | y2 | Unit.
+
+        Same layout as the time-series grid. ``cycle_count`` is the fixed x
+        (checked, disabled); every other field can be on y1 or y2.
+        """
+        COL_W = 36
+        LABEL_W = 100
+
+        header = pn.Row(
+            pn.pane.Markdown("**Field**", width=LABEL_W),
+            pn.pane.Markdown("**x**", width=COL_W),
+            pn.pane.Markdown("**y1**", width=COL_W),
+            pn.pane.Markdown("**y2**", width=COL_W),
+            pn.pane.Markdown("**Unit**", width=80),
+        )
+        rows: List[Any] = [header]
+
+        for field in self.specs:
+            is_x = field == "cycle_count"
+            cbs = []
+            for ax in ("x", "y1", "y2"):
+                cb = pn.widgets.Checkbox(
+                    value=(is_x and ax == "x")
+                    or field in self.axis_fields.get(ax, []),
+                    width=COL_W,
+                    margin=(4, 2),
+                    # cycle_count is the fixed x and cannot be on y1 / y2
+                    disabled=(ax == "x") or is_x,
+                )
+                self.checkboxes[(field, ax)] = cb
+                cb.param.watch(
+                    lambda evt, f=field, a=ax: self._on_checkbox_change(
+                        f, a, evt.new
+                    ),
+                    ["value"],
+                )
+                cbs.append(cb)
+
+            opts = self.unit_options.get(field, {})
+            if opts:
+                unit_sel = pn.widgets.Select(
+                    options=opts,
+                    value=self.units[field],
+                    width=90,
+                    margin=(2, 2),
+                )
+                unit_sel.param.watch(
+                    lambda evt, f=field: self._on_unit_change(f, evt.new),
+                    ["value"],
+                )
+                self.unit_sels[field] = unit_sel
+            else:
+                unit_sel = pn.pane.Markdown("—", width=72)
+
+            rows.append(
+                pn.Row(
+                    pn.pane.Markdown(field, width=LABEL_W),
+                    *cbs,
+                    unit_sel,
+                    margin=(2, 0),
+                )
+            )
+
+        return pn.Column(*rows)
+
+    def _sync(self) -> None:
+        """Set the y1 / y2 checkboxes and unit Selects from the state.
+
+        Runs under ``_updating`` so the watchers it triggers are no-ops.
+        """
+        self._updating = True
+        try:
+            for (field, ax), cb in self.checkboxes.items():
+                if ax == "x":
+                    continue
+                expected = field in self.axis_fields.get(ax, [])
+                if cb.value != expected:
+                    cb.value = expected
+            for field, sel in self.unit_sels.items():
+                if sel.value != self.units[field]:
+                    sel.value = self.units[field]
+        finally:
+            self._updating = False
+
+    def _on_checkbox_change(self, field: str, axis: str, checked: bool) -> None:
+        if self._updating:
+            return
+        fields = self.axis_fields
+        if checked:
+            other = "y2" if axis == "y1" else "y1"
+            if field in fields[other]:
+                fields[other].remove(field)
+            if field not in fields[axis]:
+                dim = self.specs[field][0]
+                # fields on one axis share a dimension; else the new one replaces
+                if any(self.specs[f][0] != dim for f in fields[axis]):
+                    fields[axis] = []
+                if fields[axis]:
+                    # one unit per axis: take the unit of the fields already there
+                    self.units[field] = self.units[fields[axis][0]]
+                fields[axis].append(field)
+        elif field in fields[axis]:
+            fields[axis].remove(field)
+        self._sync()
+        self.redraw()
+
+    def _on_unit_change(self, field: str, unit: str) -> None:
+        if self._updating:
+            return
+        self.units[field] = unit
+        for members in self.axis_fields.values():
+            if field in members:
+                for f in members:
+                    self.units[f] = unit
+        self._sync()
+        self.redraw()
+
+    def axis_label(self, axis: str) -> str:
+        """``"field1, field2 [unit]"`` of the fields on an axis."""
+        fields = self.axis_fields[axis]
+        opts = self.unit_options.get(fields[0], {})
+        name = self.units.get(fields[0])
+        symbol = next((s for s, n in opts.items() if n == name), None)
+        text = ", ".join(fields)
+        return f"{text} [{symbol}]" if symbol else text
 
 
 class BatteryDataView(BaseDataView):
@@ -208,12 +396,18 @@ class BatteryDataView(BaseDataView):
         self._df_cache: Dict[Any, Tuple[List[Any], Any]] = {}
         # Cycle summary frame per trace, cached the same way
         self._cycle_cache: Dict[Any, Tuple[List[Any], Any]] = {}
+        # Batches: names in creation order, dataset key -> batch name (or
+        # _NO_BATCH), and the rule ("cell" / "proc") of the last suggestion
+        self._batch_names: List[str] = []
+        self._batch_assign: Dict[str, str] = {}
+        self._batch_rule: Optional[str] = None
 
         self._build_cell_tree(cell_nodes, cell_edges)
         self._build_procedure_card(procedure_nodes, procedure_edges)
         self._build_instances_card()
         self._build_axis_card()
         self._build_cycle_card()
+        self._build_batch_cards()
         self._build_plot()
         self._build_log_console()
         self._build_config_editor()
@@ -337,35 +531,9 @@ class BatteryDataView(BaseDataView):
         the cycle plot. The plot column is reassigned wholesale on every
         redraw, like ``_plot_col``.
         """
-        # field -> (dimension, characteristic class, default unit name)
-        self._cycle_specs: Dict[str, Tuple[str, type, str]] = {
-            "cycle_count": ("count", Count, ""),
-            "charge_capacity": ("capacity", ElectricCharge, "coulomb"),
-            "discharge_capacity": ("capacity", ElectricCharge, "coulomb"),
-            "charge_coulomb_efficiency": ("efficiency", Efficiency, "percent"),
-            "discharge_coulomb_efficiency": ("efficiency", Efficiency, "percent"),
-        }
-        self._cycle_unit_options: Dict[str, Dict[str, str]] = {}
-        self._cycle_units: Dict[str, str] = {}
-        for field, (_dim, char_cls, default) in self._cycle_specs.items():
-            if field == "cycle_count":
-                continue
-            units = get_available_units(_FieldChannel(field, char_cls))
-            self._cycle_unit_options[field] = {u["symbol"]: u["name"] for u in units}
-            names = [u["name"] for u in units]
-            self._cycle_units[field] = (
-                default if default in names else (names[0] if names else "")
-            )
-        # Fields on each axis, in tick order; one unit per axis
-        self._cycle_axis_fields: Dict[str, List[str]] = {
-            "y1": ["charge_capacity", "discharge_capacity"],
-            "y2": [],
-        }
-        self._cycle_checkboxes: Dict[Tuple[str, str], pn.widgets.Checkbox] = {}
-        self._cycle_unit_sels: Dict[str, pn.widgets.Select] = {}
-
+        self._cycle_grid = _CycleGrid(self._build_cycle_figure)
         self._cycle_axis_card = pn.Card(
-            self._build_cycle_grid(),
+            self._cycle_grid.panel,
             title="Cycle Series - Axes & Units",
             collapsible=True,
             collapsed=False,
@@ -382,124 +550,150 @@ class BatteryDataView(BaseDataView):
             sizing_mode="stretch_width",
         )
 
-    def _build_cycle_grid(self) -> pn.Column:
-        """Grid: rows = cycle fields, cols = x | y1 | y2 | Unit.
+    # -- Batches -------------------------------------------------------------
 
-        Same layout as the time-series grid. ``cycle_count`` is the fixed x
-        (checked, disabled); every other field can be on y1 or y2.
+    _NO_BATCH = "(none)"
+
+    def _build_batch_cards(self) -> None:
+        """Batches card, grid card and plot card of the batch series.
+
+        The grid is a second :class:`_CycleGrid` that redraws only the batch
+        plot. Batch edits redraw only the batch plot as well.
         """
-        COL_W = 36
-        LABEL_W = 100
-
-        header = pn.Row(
-            pn.pane.Markdown("**Field**", width=LABEL_W),
-            pn.pane.Markdown("**x**", width=COL_W),
-            pn.pane.Markdown("**y1**", width=COL_W),
-            pn.pane.Markdown("**y2**", width=COL_W),
-            pn.pane.Markdown("**Unit**", width=80),
+        self._batch_grid = _CycleGrid(self._build_batch_figure)
+        self._batch_axis_card = pn.Card(
+            self._batch_grid.panel,
+            title="Batch Series - Axes & Units",
+            collapsible=True,
+            collapsed=False,
         )
-        rows: List[Any] = [header]
 
-        for field in self._cycle_specs:
-            is_x = field == "cycle_count"
-            cbs = []
-            for ax in ("x", "y1", "y2"):
-                cb = pn.widgets.Checkbox(
-                    value=(is_x and ax == "x")
-                    or field in self._cycle_axis_fields.get(ax, []),
-                    width=COL_W,
-                    margin=(4, 2),
-                    # cycle_count is the fixed x and cannot be on y1 / y2
-                    disabled=(ax == "x") or is_x,
-                )
-                self._cycle_checkboxes[(field, ax)] = cb
-                cb.param.watch(
-                    lambda evt, f=field, a=ax: self._on_cycle_checkbox_change(
-                        f, a, evt.new
-                    ),
-                    ["value"],
-                )
-                cbs.append(cb)
+        self._batch_cell_button = pn.widgets.Button(name="Cell batches", width=110)
+        self._batch_cell_button.on_click(lambda _e: self._suggest_batches("cell"))
+        self._batch_proc_button = pn.widgets.Button(
+            name="Procedure batches", width=130
+        )
+        self._batch_proc_button.on_click(lambda _e: self._suggest_batches("proc"))
+        self._batch_input = pn.widgets.TextInput(
+            placeholder="New batch name", width=150, margin=(4, 2)
+        )
+        self._batch_add_button = pn.widgets.Button(name="Add batch", width=90)
+        self._batch_add_button.on_click(lambda _e: self._add_batch())
+        self._batch_rows = pn.Column(
+            pn.pane.Markdown("_No datasets._"), sizing_mode="stretch_width"
+        )
+        self._batches_card = pn.Card(
+            pn.Row(self._batch_cell_button, self._batch_proc_button),
+            pn.Row(self._batch_input, self._batch_add_button),
+            self._batch_rows,
+            title="Batches",
+            collapsible=True,
+            collapsed=False,
+        )
+        self._batch_col = pn.Column(
+            pn.pane.Markdown("_No batch data._", margin=(10, 6)),
+            sizing_mode="stretch_width",
+        )
+        self._batch_card = pn.Card(
+            self._batch_col,
+            title="Batch Series",
+            collapsible=True,
+            collapsed=False,
+            sizing_mode="stretch_width",
+        )
 
-            opts = self._cycle_unit_options.get(field, {})
-            if opts:
-                unit_sel = pn.widgets.Select(
-                    options=opts,
-                    value=self._cycle_units[field],
-                    width=90,
-                    margin=(2, 2),
-                )
-                unit_sel.param.watch(
-                    lambda evt, f=field: self._on_cycle_unit_change(f, evt.new),
-                    ["value"],
-                )
-                self._cycle_unit_sels[field] = unit_sel
-            else:
-                unit_sel = pn.pane.Markdown("—", width=72)
+    @staticmethod
+    def _suggested_name(record: Dict, rule: str) -> Optional[str]:
+        """Batch name the rule gives a dataset record, or ``None``."""
+        if rule == "cell":
+            category = record.get("cell_category")
+            return category[1] if category else None
+        return record.get("procedure_label")
 
+    def _ensure_batch(self, name: str) -> None:
+        if name not in self._batch_names:
+            self._batch_names.append(name)
+
+    def _suggest_batches(self, rule: str) -> None:
+        """Replace all assignments by the groups of *rule* (``cell`` / ``proc``).
+
+        Datasets without the needed information go to "(none)". The rule is
+        kept and also applies to datasets that appear later.
+        """
+        self._batch_rule = rule
+        self._batch_assign = {}
+        self._batch_names = []
+        for record in self._dataset_records():
+            name = self._suggested_name(record, rule)
+            if name:
+                self._ensure_batch(name)
+            self._batch_assign[record["key"]] = name or self._NO_BATCH
+        # sorted, so batch order and colours do not depend on the match order
+        self._batch_names.sort()
+        self._refresh_batch_rows()
+        self._build_batch_figure()
+
+    def _add_batch(self) -> None:
+        name = (self._batch_input.value or "").strip()
+        if not name or name == self._NO_BATCH or name in self._batch_names:
+            return
+        self._batch_names.append(name)
+        self._batch_input.value = ""
+        self._refresh_batch_rows()
+        self._build_batch_figure()
+
+    def _refresh_batches(self) -> None:
+        """Assign new datasets by the last rule, then rebuild the rows.
+
+        A known dataset key keeps its batch, also while the dataset is not
+        ticked. A new key joins (or creates) the batch the last suggestion rule
+        gives it, else "(none)".
+        """
+        for record in self._dataset_records():
+            key = record["key"]
+            if key in self._batch_assign:
+                continue
+            name = (
+                self._suggested_name(record, self._batch_rule)
+                if self._batch_rule
+                else None
+            )
+            if name:
+                self._ensure_batch(name)
+            self._batch_assign[key] = name or self._NO_BATCH
+        self._refresh_batch_rows()
+
+    def _refresh_batch_rows(self) -> None:
+        """One row per ticked dataset: its label and a Select of the batches."""
+        records = self._dataset_records()
+        if not records:
+            self._batch_rows.objects = [pn.pane.Markdown("_No datasets._")]
+            return
+        options = [self._NO_BATCH] + self._batch_names
+        rows = []
+        for record in records:
+            key = record["key"]
+            sel = pn.widgets.Select(
+                options=options,
+                value=self._batch_assign.get(key, self._NO_BATCH),
+                width=140,
+                margin=(2, 2),
+            )
+            sel.param.watch(
+                lambda evt, k=key: self._on_batch_select(k, evt.new), ["value"]
+            )
             rows.append(
                 pn.Row(
-                    pn.pane.Markdown(field, width=LABEL_W),
-                    *cbs,
-                    unit_sel,
+                    pn.pane.Markdown(record["label"], width=150),
+                    sel,
                     margin=(2, 0),
                 )
             )
+        self._batch_rows.objects = rows
 
-        return pn.Column(*rows)
-
-    def _sync_cycle_widgets(self) -> None:
-        """Set the y1 / y2 checkboxes and unit Selects from the cycle state.
-
-        Runs under ``_updating_checkboxes`` so the watchers it triggers are
-        no-ops.
-        """
-        self._updating_checkboxes = True
-        try:
-            for (field, ax), cb in self._cycle_checkboxes.items():
-                if ax == "x":
-                    continue
-                expected = field in self._cycle_axis_fields.get(ax, [])
-                if cb.value != expected:
-                    cb.value = expected
-            for field, sel in self._cycle_unit_sels.items():
-                if sel.value != self._cycle_units[field]:
-                    sel.value = self._cycle_units[field]
-        finally:
-            self._updating_checkboxes = False
-
-    def _on_cycle_checkbox_change(self, field: str, axis: str, checked: bool) -> None:
-        if self._updating_checkboxes:
-            return
-        fields = self._cycle_axis_fields
-        if checked:
-            other = "y2" if axis == "y1" else "y1"
-            if field in fields[other]:
-                fields[other].remove(field)
-            if field not in fields[axis]:
-                dim = self._cycle_specs[field][0]
-                # fields on one axis share a dimension; else the new one replaces
-                if any(self._cycle_specs[f][0] != dim for f in fields[axis]):
-                    fields[axis] = []
-                if fields[axis]:
-                    # one unit per axis: take the unit of the fields already there
-                    self._cycle_units[field] = self._cycle_units[fields[axis][0]]
-                fields[axis].append(field)
-        elif field in fields[axis]:
-            fields[axis].remove(field)
-        self._sync_cycle_widgets()
-        self._build_cycle_figure()
-
-    def _on_cycle_unit_change(self, field: str, unit: str) -> None:
-        if self._updating_checkboxes:
-            return
-        self._cycle_units[field] = unit
-        for members in self._cycle_axis_fields.values():
-            if field in members:
-                for f in members:
-                    self._cycle_units[f] = unit
-        self._sync_cycle_widgets()
-        self._build_cycle_figure()
+    def _on_batch_select(self, key: str, name: str) -> None:
+        self._batch_assign[key] = name
+        self._build_batch_figure()
 
     def _build_axis_grid(self) -> pn.Column:
         """Grid: rows = fields, cols = x | y1 | y2 | Unit.
@@ -777,9 +971,54 @@ class BatteryDataView(BaseDataView):
                 {
                     "label": f"{'/'.join(cell_labels)} — {proc_label}",
                     "rows": rows,
+                    "key": f"test-{m['idx']}",
                 }
             )
         return traces
+
+    def _dataset_records(self) -> List[Dict]:
+        """One record per ticked match, for the Batches card.
+
+        A record is ``{"key", "label", "cell_iri", "cell_category",
+        "procedure_iri", "procedure_label"}``; ``key`` equals the ``"key"`` of
+        the matching trace. ``cell_category`` is ``(iri, label)`` of the
+        cell's class. Unknown values are ``None``. The cell is the first
+        device under test and the procedure the first procedure IRI.
+        """
+        by_iri = self._proc_by_iri()
+        records = []
+        for m in self._matching_tests():
+            if not self._instance_selections.get(m["idx"], True):
+                continue
+            test = m["test"]
+            dut: List[Any] = getattr(test, "device_under_test", []) or []
+            cell = dut[0] if dut else None
+            category = None
+            if cell is not None:
+                cls = type(cell)
+                getter = getattr(cls, "get_cls_iri", None)
+                try:
+                    cat_iri = getter() if callable(getter) else cls.__name__
+                except Exception:  # noqa: BLE001 - fall back to the class name
+                    cat_iri = cls.__name__
+                category = (cat_iri, cls.__name__)
+            proc_iris = sorted(self._test_proc_iris(test))
+            proc_iri = proc_iris[0] if proc_iris else None
+            records.append(
+                {
+                    "key": f"test-{m['idx']}",
+                    "label": m["label"],
+                    "cell_iri": self._obj_iri(cell) if cell is not None else None,
+                    "cell_category": category,
+                    "procedure_iri": proc_iri,
+                    "procedure_label": (
+                        self._obj_label(by_iri[proc_iri])
+                        if proc_iri in by_iri
+                        else None
+                    ),
+                }
+            )
+        return records
 
     def _proc_by_iri(self) -> Dict[str, Any]:
         """Map procedure IRI -> procedure object, cached from ``procedure_objects``."""
@@ -1010,9 +1249,12 @@ class BatteryDataView(BaseDataView):
         pass
 
     def _build_figure(self) -> None:
-        """Re-render the time-series plot and the cycle plot."""
+        """Re-render the time-series, cycle and batch plots and the batch rows."""
         self._build_time_series_figure()
         self._build_cycle_figure()
+        if hasattr(self, "_batch_col"):
+            self._refresh_batches()
+            self._build_batch_figure()
 
     def _build_time_series_figure(self) -> None:
         """Re-render the time-series plot from the current selection.
@@ -1194,7 +1436,7 @@ class BatteryDataView(BaseDataView):
         if df is None or column not in df.columns or not hasattr(df[column], "pint"):
             return None
         series = df[column]
-        char_cls = self._cycle_specs[column][1]
+        char_cls = _CycleGrid.SPECS[column][1]
         if unit_name:
             try:
                 series = series.pint.to(
@@ -1213,15 +1455,6 @@ class BatteryDataView(BaseDataView):
         xs, ys = zip(*pairs)
         return list(xs), list(ys)
 
-    def _cycle_axis_label(self, axis: str) -> str:
-        """``"field1, field2 [unit]"`` of the fields on an axis."""
-        fields = self._cycle_axis_fields[axis]
-        opts = self._cycle_unit_options.get(fields[0], {})
-        name = self._cycle_units.get(fields[0])
-        symbol = next((s for s, n in opts.items() if n == name), None)
-        text = ", ".join(fields)
-        return f"{text} [{symbol}]" if symbol else text
-
     def _make_cycle_figure(self):
         """Build the cycle figure from the current selection, or ``None``.
 
@@ -1230,14 +1463,15 @@ class BatteryDataView(BaseDataView):
         the time-series figure; charge fields are solid, discharge dashed;
         capacities use circles and efficiencies squares.
         """
-        if not any(self._cycle_axis_fields.values()):
+        grid = self._cycle_grid
+        if not any(grid.axis_fields.values()):
             return None
 
         drawn: Dict[str, List[Any]] = {"y1": [], "y2": []}
         for i, trace in enumerate(self._resolve_traces()):
             for axis in ("y1", "y2"):
-                for field in self._cycle_axis_fields[axis]:
-                    data = self._cycle_series(trace, field, self._cycle_units[field])
+                for field in grid.axis_fields[axis]:
+                    data = self._cycle_series(trace, field, grid.units[field])
                     if data is not None:
                         drawn[axis].append((i, trace, field, data))
         if not drawn["y1"] and not drawn["y2"]:
@@ -1250,14 +1484,14 @@ class BatteryDataView(BaseDataView):
             tools="pan,wheel_zoom,box_zoom,reset,save",
         )
         if drawn["y1"]:
-            fig.yaxis[0].axis_label = self._cycle_axis_label("y1")
+            fig.yaxis[0].axis_label = grid.axis_label("y1")
         else:
             fig.yaxis[0].visible = False
         if drawn["y2"]:
             rng = self._data_range([d[3][1] for d in drawn["y2"]])
             fig.extra_y_ranges = {"y2": Range1d(*rng)}
             fig.add_layout(
-                LinearAxis(y_range_name="y2", axis_label=self._cycle_axis_label("y2")),
+                LinearAxis(y_range_name="y2", axis_label=grid.axis_label("y2")),
                 "right",
             )
 
@@ -1268,7 +1502,7 @@ class BatteryDataView(BaseDataView):
                 source = ColumnDataSource({"x": xs, "y": ys})
                 label = f"{trace['label']} {field}"
                 dash = "solid" if field.startswith("charge") else "dashed"
-                is_capacity = self._cycle_specs[field][0] == "capacity"
+                is_capacity = grid.specs[field][0] == "capacity"
                 fig.line(
                     "x",
                     "y",
@@ -1302,6 +1536,208 @@ class BatteryDataView(BaseDataView):
             pn.pane.Bokeh(fig, sizing_mode="stretch_width")
             if fig is not None
             else pn.pane.Markdown("_No cycle data._", margin=(10, 6))
+        ]
+
+    # -- Batch series --------------------------------------------------------
+
+    def _cycle_member_values(self, trace: Dict, field: str):
+        """``({cycle: value}, unit)`` of a cycle column in its stored unit.
+
+        ``({}, None)`` when the trace has no value of the field.
+        """
+        import pandas as pd
+
+        df = self._cached_cycle_df(trace)
+        if df is None or field not in df.columns or not hasattr(df[field], "pint"):
+            return {}, None
+        series = df[field]
+        values = {
+            float(c): float(v)
+            for c, v in zip(df["cycle_count"].pint.magnitude, series.pint.magnitude)
+            if not pd.isna(c) and not pd.isna(v)
+        }
+        return values, series.pint.units
+
+    def _batch_series(self, members: List[Dict], field: str, unit_name: Optional[str]):
+        """Aggregated ``(cycle, mean, std, n)`` rows of a batch, in the unit.
+
+        The members are averaged in their stored unit; mean and standard
+        deviation are converted afterwards (the offered units are pure scale
+        factors). ``None`` when no member has a value.
+        """
+        per_member = []
+        stored = None
+        for trace in members:
+            values, units = self._cycle_member_values(trace, field)
+            if values:
+                per_member.append(values)
+                stored = stored if stored is not None else units
+        rows = aggregate_batch(per_member)
+        if not rows:
+            return None
+        factor = 1.0
+        if unit_name and stored is not None:
+            char_cls = _CycleGrid.SPECS[field][1]
+            try:
+                target = char_cls.get_pint_ureg_compatible_str(unit_name)
+                factor = float((1.0 * stored).to(target).magnitude)
+            except Exception:  # noqa: BLE001 - bad unit: keep the stored unit
+                factor = 1.0
+        return [
+            (c, m * factor, None if sd is None else sd * factor, n)
+            for c, m, sd, n in rows
+        ]
+
+    def _make_batch_figure(self):
+        """Build the batch figure from the current assignments, or ``None``.
+
+        One series per (batch, field) on y1 / y2: the mean per cycle as line
+        and markers, the sample standard deviation as whiskers where a cycle
+        has at least two values. Colours follow the batch order; charge fields
+        are solid, discharge dashed; capacities use circles and efficiencies
+        squares. Batches without a member and series without a value are
+        skipped.
+        """
+        grid = self._batch_grid
+        if not any(grid.axis_fields.values()):
+            return None
+
+        members: Dict[str, List[Dict]] = {name: [] for name in self._batch_names}
+        for trace in self._resolve_traces():
+            name = self._batch_assign.get(trace.get("key"))
+            if name in members:
+                members[name].append(trace)
+
+        drawn: Dict[str, List[Any]] = {"y1": [], "y2": []}
+        for i, name in enumerate(self._batch_names):
+            if not members[name]:
+                continue
+            for axis in ("y1", "y2"):
+                for field in grid.axis_fields[axis]:
+                    data = self._batch_series(members[name], field, grid.units[field])
+                    if data is not None:
+                        drawn[axis].append((i, name, field, data))
+        if not drawn["y1"] and not drawn["y2"]:
+            return None
+
+        fig = bk_figure(
+            height=350,
+            sizing_mode="stretch_width",
+            x_axis_label="cycle_count",
+            tools="pan,wheel_zoom,box_zoom,reset,save",
+        )
+
+        def spread_range(series: List[Any]):
+            # explicit range: Bokeh's auto range ignores the whiskers
+            return self._data_range(
+                [
+                    [m for _c, m, _sd, _n in d[3]]
+                    + [m + sd for _c, m, sd, _n in d[3] if sd is not None]
+                    + [m - sd for _c, m, sd, _n in d[3] if sd is not None]
+                    for d in series
+                ]
+            )
+
+        if drawn["y1"]:
+            fig.yaxis[0].axis_label = grid.axis_label("y1")
+            fig.y_range = Range1d(*spread_range(drawn["y1"]))
+        else:
+            fig.yaxis[0].visible = False
+        if drawn["y2"]:
+            rng = spread_range(drawn["y2"])
+            fig.extra_y_ranges = {"y2": Range1d(*rng)}
+            fig.add_layout(
+                LinearAxis(y_range_name="y2", axis_label=grid.axis_label("y2")),
+                "right",
+            )
+
+        marker_renderers = []
+        for axis in ("y1", "y2"):
+            y_kwargs = {"y_range_name": "y2"} if axis == "y2" else {}
+            for i, name, field, rows in drawn[axis]:
+                color = COLORS[i % len(COLORS)]
+                source = ColumnDataSource(
+                    {
+                        "x": [r[0] for r in rows],
+                        "y": [r[1] for r in rows],
+                        "std_text": [
+                            "-" if r[2] is None else f"{r[2]:.6g}" for r in rows
+                        ],
+                        "n": [r[3] for r in rows],
+                        "batch": [name] * len(rows),
+                        "field": [field] * len(rows),
+                    }
+                )
+                label = f"{name} {field}"
+                dash = "solid" if field.startswith("charge") else "dashed"
+                is_capacity = grid.specs[field][0] == "capacity"
+                fig.line(
+                    "x",
+                    "y",
+                    source=source,
+                    legend_label=label,
+                    color=color,
+                    line_width=2,
+                    line_dash=dash,
+                    **y_kwargs,
+                )
+                marker_renderers.append(
+                    fig.scatter(
+                        "x",
+                        "y",
+                        source=source,
+                        legend_label=label,
+                        color=color,
+                        marker="circle" if is_capacity else "square",
+                        size=6,
+                        **y_kwargs,
+                    )
+                )
+                spread = [r for r in rows if r[2] is not None]
+                if spread:
+                    fig.add_layout(
+                        Whisker(
+                            base="x",
+                            upper="upper",
+                            lower="lower",
+                            source=ColumnDataSource(
+                                {
+                                    "x": [r[0] for r in spread],
+                                    "upper": [r[1] + r[2] for r in spread],
+                                    "lower": [r[1] - r[2] for r in spread],
+                                }
+                            ),
+                            line_color=color,
+                            level="annotation",
+                            **y_kwargs,
+                        )
+                    )
+
+        fig.add_tools(
+            HoverTool(
+                renderers=marker_renderers,
+                tooltips=[
+                    ("batch", "@batch"),
+                    ("field", "@field"),
+                    ("cycle", "@x"),
+                    ("mean", "@y"),
+                    ("std", "@std_text"),
+                    ("n", "@n"),
+                ],
+            )
+        )
+        fig.legend.click_policy = "hide"
+        return fig
+
+    def _build_batch_figure(self) -> None:
+        """Re-render the batch plot (the column is reassigned wholesale)."""
+        if not hasattr(self, "_batch_col"):
+            return  # _build_batch_cards has not run yet
+        fig = self._make_batch_figure()
+        self._batch_col.objects = [
+            pn.pane.Bokeh(fig, sizing_mode="stretch_width")
+            if fig is not None
+            else pn.pane.Markdown("_No batch data._", margin=(10, 6))
         ]
 
     def _build_plot(self) -> None:
@@ -1365,9 +1801,11 @@ class BatteryDataView(BaseDataView):
             self._instances_card,
             self._axis_card,
             self._cycle_axis_card,
+            self._batches_card,
+            self._batch_axis_card,
             self._config_card,
         ]
 
     @property
     def main_cards(self) -> List[Any]:
-        return [self._plot_card, self._cycle_card, self._log_card]
+        return [self._plot_card, self._cycle_card, self._batch_card, self._log_card]
