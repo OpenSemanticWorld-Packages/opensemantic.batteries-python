@@ -17,8 +17,8 @@ import pytest
 panel = pytest.importorskip("panel")
 pytest.importorskip("panelini")
 
-from bokeh.plotting import figure as bk_figure  # noqa: E402
 from _view_helpers import make_view  # noqa: E402
+from bokeh.plotting import figure as bk_figure  # noqa: E402
 
 
 @pytest.fixture

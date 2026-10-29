@@ -10,9 +10,7 @@ Swap PythonSource for LazySource to load from a remote backend.
 
 import panel as pn
 from battery_example_data import (
-    CylindricalCell,
     ElectrochemicalTestProcedure,
-    PrismaticCell,
     aging_test_a,
     aging_test_b,
     cell_a,
@@ -53,7 +51,8 @@ cell_builder = OOLDTreeBuilder(
     ceiling=BatteryCell,
 )
 
-# Procedure hierarchy: aging_test_a/b, formation → AgingTestProcedure/FormationTestProcedure → ElectrochemicalTestProcedure
+# Procedure hierarchy: aging_test_a/b, formation
+#   → AgingTestProcedure/FormationTestProcedure → ElectrochemicalTestProcedure
 procedure_builder = OOLDTreeBuilder(
     source=PythonSource([aging_test_a, aging_test_b, formation_procedure]),
     relations=[has_type()],

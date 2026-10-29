@@ -10,7 +10,7 @@ from __future__ import annotations
 import random
 from typing import List
 
-from opensemantic.batteries.v1 import (
+from opensemantic.batteries.v1 import (  # noqa: F401 (re-exported to the examples)
     AgingTestProcedure,
     CyclingDataRow,
     CylindricalCell,
@@ -29,7 +29,6 @@ from opensemantic.characteristics.quantitative.v1 import (
     Voltage,
 )
 from opensemantic.core.v1 import Label
-from opensemantic.lab.v1 import AnalyticalLaboratoryProcess
 
 # ---------------------------------------------------------------------------
 # Helpers

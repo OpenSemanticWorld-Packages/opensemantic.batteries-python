@@ -133,9 +133,7 @@ class LazyBatteryDataView(BatteryDataView):
     # -- Lazy trees ----------------------------------------------------------
 
     def _build_cell_tree(self, nodes: Dict, edges: List) -> None:
-        self._cell_tree = self._make_lazy_tree(
-            "cell", self._backend.cell_root, "Cell"
-        )
+        self._cell_tree = self._make_lazy_tree("cell", self._backend.cell_root, "Cell")
         self._cell_card = pn.Card(
             self._cell_tree,
             title="Cells",

@@ -5,8 +5,8 @@ so :class:`LazyBatteryDataView` can be exercised without a live OSL wiki:
 
     Cells:       BatteryCell -> {CylindricalCell -> [Cell A, Cell B],
                                  PrismaticCell   -> [Cell C]}
-    Procedures:  ElectrochemicalTestProcedure -> {AgingTestProcedure    -> [Aging A],
-                                                   FormationTestProcedure -> [Formation]}
+    Procedures:  ElectrochemicalTestProcedure -> {AgingTestProcedure   -> [Aging A],
+                                                  FormationTestProcedure -> [Formation]}
 """
 
 from __future__ import annotations

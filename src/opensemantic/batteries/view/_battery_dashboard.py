@@ -186,8 +186,7 @@ class _CycleGrid:
             cbs = []
             for ax in ("x", "y1", "y2"):
                 cb = pn.widgets.Checkbox(
-                    value=(is_x and ax == "x")
-                    or field in self.axis_fields.get(ax, []),
+                    value=(is_x and ax == "x") or field in self.axis_fields.get(ax, []),
                     width=COL_W,
                     margin=(4, 2),
                     # cycle_count is the fixed x and cannot be on y1 / y2
@@ -195,9 +194,7 @@ class _CycleGrid:
                 )
                 self.checkboxes[(field, ax)] = cb
                 cb.param.watch(
-                    lambda evt, f=field, a=ax: self._on_checkbox_change(
-                        f, a, evt.new
-                    ),
+                    lambda evt, f=field, a=ax: self._on_checkbox_change(f, a, evt.new),
                     ["value"],
                 )
                 cbs.append(cb)
@@ -482,9 +479,7 @@ class BatteryDataView(BaseDataView):
 
     def _build_cell_tree(self, nodes: Dict, edges: List) -> None:
         source = build_oold_tree_source(nodes, edges)
-        self._cell_tree = self._make_tree(
-            set_selected_instances(source, set()), "Cell"
-        )
+        self._cell_tree = self._make_tree(set_selected_instances(source, set()), "Cell")
         self._cell_card = pn.Card(
             self._cell_tree,
             title="Cells",
@@ -570,9 +565,7 @@ class BatteryDataView(BaseDataView):
 
         self._batch_cell_button = pn.widgets.Button(name="Cell batches", width=110)
         self._batch_cell_button.on_click(lambda _e: self._suggest_batches("cell"))
-        self._batch_proc_button = pn.widgets.Button(
-            name="Procedure batches", width=130
-        )
+        self._batch_proc_button = pn.widgets.Button(name="Procedure batches", width=130)
         self._batch_proc_button.on_click(lambda _e: self._suggest_batches("proc"))
         self._batch_input = pn.widgets.TextInput(
             placeholder="New batch name", width=150, margin=(4, 2)
@@ -1160,9 +1153,11 @@ class BatteryDataView(BaseDataView):
         series = df[field]
         if self._categorical_values(field) is not None:
             return [
-                None
-                if v is None or (not isinstance(v, Enum) and pd.isna(v))
-                else (v.value if isinstance(v, Enum) else str(v))
+                (
+                    None
+                    if v is None or (not isinstance(v, Enum) and pd.isna(v))
+                    else (v.value if isinstance(v, Enum) else str(v))
+                )
                 for v in series
             ]
         if not hasattr(series, "pint"):
@@ -1267,9 +1262,11 @@ class BatteryDataView(BaseDataView):
             return  # _build_plot has not run yet
         fig = self._make_figure()
         self._plot_col.objects = [
-            pn.pane.Bokeh(fig, sizing_mode="stretch_width")
-            if fig is not None
-            else pn.pane.Markdown("_No data selected._", margin=(10, 6))
+            (
+                pn.pane.Bokeh(fig, sizing_mode="stretch_width")
+                if fig is not None
+                else pn.pane.Markdown("_No data selected._", margin=(10, 6))
+            )
         ]
 
     @staticmethod
@@ -1533,9 +1530,11 @@ class BatteryDataView(BaseDataView):
             return  # _build_cycle_card has not run yet
         fig = self._make_cycle_figure()
         self._cycle_col.objects = [
-            pn.pane.Bokeh(fig, sizing_mode="stretch_width")
-            if fig is not None
-            else pn.pane.Markdown("_No cycle data._", margin=(10, 6))
+            (
+                pn.pane.Bokeh(fig, sizing_mode="stretch_width")
+                if fig is not None
+                else pn.pane.Markdown("_No cycle data._", margin=(10, 6))
+            )
         ]
 
     # -- Batch series --------------------------------------------------------
@@ -1735,9 +1734,11 @@ class BatteryDataView(BaseDataView):
             return  # _build_batch_cards has not run yet
         fig = self._make_batch_figure()
         self._batch_col.objects = [
-            pn.pane.Bokeh(fig, sizing_mode="stretch_width")
-            if fig is not None
-            else pn.pane.Markdown("_No batch data._", margin=(10, 6))
+            (
+                pn.pane.Bokeh(fig, sizing_mode="stretch_width")
+                if fig is not None
+                else pn.pane.Markdown("_No batch data._", margin=(10, 6))
+            )
         ]
 
     def _build_plot(self) -> None:

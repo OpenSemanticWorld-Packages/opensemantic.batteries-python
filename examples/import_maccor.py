@@ -29,9 +29,7 @@ print(f"Imported {len(dataset.data)} rows from {SOURCE.name}")
 df = dataset.to_df().iloc[100:103].reset_index(drop=True)
 df["power"] = df["voltage"] * df["current"]
 print(f"Derived column 'power' with dtype {df['power'].dtype}")
-enriched = CyclingDatasetController.from_df(
-    df, label=f"{SOURCE.name} (rows 100-102)"
-)
+enriched = CyclingDatasetController.from_df(df, label=f"{SOURCE.name} (rows 100-102)")
 
 # 3. Serialise the dataset compactly - exclude_defaults skips values left at
 #    their default (e.g. units at their default unit) - and print as YAML.

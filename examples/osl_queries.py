@@ -20,15 +20,15 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from osw.defaults import params as default_params
+from osw.defaults import paths as default_paths
+from osw.express import OswExpress
+
 from opensemantic.batteries.v1 import (
     BatteryCell,
     ElectrochemicalTest,
     ElectrochemicalTestProcedure,
 )
-
-from osw.defaults import params as default_params
-from osw.defaults import paths as default_paths
-from osw.express import OswExpress
 
 WIKI_DOMAIN = "wiki-dev.open-semantic-lab.org"
 CRED_FILEPATH = Path("accounts.pwd.yaml")

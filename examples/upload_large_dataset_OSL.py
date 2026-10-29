@@ -33,14 +33,14 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from opensemantic.batteries import read_maccor
-from opensemantic.batteries.v1 import ElectrochemicalTest, TestProcedureItem
-from opensemantic.core.v1 import Label
-
 from osw.controller.file.wiki import WikiFileController
 from osw.defaults import params as default_params
 from osw.defaults import paths as default_paths
 from osw.express import OswExpress
+
+from opensemantic.batteries import read_maccor
+from opensemantic.batteries.v1 import ElectrochemicalTest, TestProcedureItem
+from opensemantic.core.v1 import Label
 
 WIKI_DOMAIN = "wiki-dev.open-semantic-lab.org"
 CRED_FILEPATH = Path("accounts.pwd.yaml")

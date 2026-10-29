@@ -14,7 +14,7 @@ Skipped as a group when the ``[view]`` extra is not installed.
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import pytest
 

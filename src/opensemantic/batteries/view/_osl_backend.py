@@ -6,8 +6,10 @@ with semantic searches (see ``examples/osl_queries.py`` for the raw calls):
 
 * sub-categories of a category ``C``   ``[[SubClassOf::C]]``
 * instances of a category ``C``        ``[[HasSchema::C]]``
-* datasets for a cell + procedure      ``[[-HasOutput.HasSchema::<ElectrochemicalTest>]]``
-                                       ``[[-HasOutput.HasDut::<cell>]][[-HasOutput.HasProcedure::<proc>]]``
+* datasets for a cell + procedure
+                                       ``[[-HasOutput.HasSchema::<ElectrochemicalTest>]]``
+                                       ``[[-HasOutput.HasDut::<cell>]]``
+                                       ``[[-HasOutput.HasProcedure::<proc>]]``
 
 Category IRIs default to the generated classes' ``get_cls_iri()`` — no
 hand-copied OSW ids. The dataset query uses the *inverse-output* path (a page
@@ -293,7 +295,8 @@ class OSLBatteryBackend(BatteryDataBackend):
                 rows = self._entity_rows(self._osw.load_entity(title))
             except Exception as exc:  # noqa: BLE001
                 print(
-                    f"[opensemantic.batteries.view] load_entity({title!r}) failed: {exc}"
+                    "[opensemantic.batteries.view] "
+                    f"load_entity({title!r}) failed: {exc}"
                 )
         self._rows_cache[title] = rows
         return rows
@@ -374,7 +377,5 @@ class OSLBatteryBackend(BatteryDataBackend):
 
         # the page title, without a query string or fragment the URL may carry
         title = "File:" + re.split(r"[?#&]", url.split("File:")[-1])[0]
-        wiki_file = self._osw.load_entity(title).cast(
-            WikiFileController, osw=self._osw
-        )
+        wiki_file = self._osw.load_entity(title).cast(WikiFileController, osw=self._osw)
         return distribution.copy(update={"file": wiki_file})

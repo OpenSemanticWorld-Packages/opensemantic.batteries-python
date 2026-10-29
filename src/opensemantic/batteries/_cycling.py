@@ -19,12 +19,13 @@ Stay in the v1 layer here.
 from enum import Enum
 from typing import List, Optional, Union
 
+from pydantic.v1 import Field
+
 from opensemantic.batteries.v1._model import (  # noqa: F401 (re-export)
     CyclingDataRow,
     ElectrochemicalCyclingDataset,
 )
 from opensemantic.core.v1 import Label
-from pydantic.v1 import Field
 
 __all__ = [
     "CyclingDataRow",
@@ -88,9 +89,7 @@ class CyclingDatasetController(ElectrochemicalCyclingDataset):
         # An all-missing object column (e.g. ``step_type`` of rows that carry
         # none) makes the base ``from_df`` fail on ``series.pint`` (pandas
         # reports the accessor for it), and it holds no values to restore.
-        empty = [
-            c for c in df.columns if df[c].dtype == object and df[c].isna().all()
-        ]
+        empty = [c for c in df.columns if df[c].dtype == object and df[c].isna().all()]
         if empty:
             df = df.drop(columns=empty)
         return super().from_df(df, label=labels, **kwargs)

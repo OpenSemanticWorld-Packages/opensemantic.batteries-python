@@ -6,7 +6,7 @@ they already exist (``BatteryCell``, ``ElectrochemicalTestProcedure`` and its
 example-specific test run, dataset and cell form-factor classes are defined here.
 """
 
-### Pointers to
+# Pointers to
 # ---------------------------------------------------------------------------
 # Cells
 # ---------------------------------------------------------------------------

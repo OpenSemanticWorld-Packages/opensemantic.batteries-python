@@ -15,6 +15,8 @@ Layer note (see CLAUDE.md): Pydantic **v1**, like the cycling classes.
 import math
 from typing import Dict, List, Optional, Union
 
+from pydantic.v1 import Field
+
 from opensemantic.base.v1 import Dataset
 from opensemantic.batteries._cycling import StepType
 from opensemantic.characteristics.quantitative.v1 import (
@@ -23,7 +25,6 @@ from opensemantic.characteristics.quantitative.v1 import (
     ElectricCharge,
 )
 from opensemantic.core.v1 import Characteristic, Label
-from pydantic.v1 import Field
 
 __all__ = ["CycleDataRow", "CycleSummaryDataset", "cycle_summary"]
 
@@ -117,9 +118,7 @@ def cycle_summary(
         target = (
             charge
             if step == StepType.CCCV_CHG
-            else discharge
-            if step == StepType.CC_DCH
-            else None
+            else discharge if step == StepType.CC_DCH else None
         )
         if target is None:
             continue
