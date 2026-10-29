@@ -42,7 +42,9 @@ class StepType(str, Enum):
     CC_CHG = "CC_CHG"
     CC_DCH = "CC_DCH"
     CV_CHG = "CV_CHG"
+    CV_DCH = "CV_DCH"
     CCCV_CHG = "CCCV_CHG"
+    CCCV_DCH = "CCCV_DCH"
     REST = "REST"
     OCV = "OCV"
     EIS = "EIS"
@@ -62,8 +64,10 @@ class StepTypedCyclingDataRow(CyclingDataRow):
             "A string label describing the operational mode of the current test "
             "step, as reported by the cycler software. Common values include "
             "CC_CHG (constant-current charge), CC_DCH (constant-current "
-            "discharge), CV_CHG (constant-voltage charge), CCCV_CHG "
-            "(constant-current constant-voltage charge), REST, OCV, and EIS."
+            "discharge), CV_CHG (constant-voltage charge), CV_DCH "
+            "(constant-voltage discharge), CCCV_CHG (constant-current "
+            "constant-voltage charge), CCCV_DCH (constant-current "
+            "constant-voltage discharge), REST, OCV, and EIS."
         ),
     )
 

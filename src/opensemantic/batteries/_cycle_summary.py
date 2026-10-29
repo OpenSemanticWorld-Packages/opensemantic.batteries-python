@@ -87,6 +87,11 @@ def _in_coulomb(value: Optional[ElectricCharge]) -> Optional[float]:
     return float(value.to_pint().to("coulomb").magnitude)
 
 
+# Step types whose capacity counts as charge / discharge capacity
+_CHARGE_STEPS = {StepType.CC_CHG, StepType.CV_CHG, StepType.CCCV_CHG}
+_DISCHARGE_STEPS = {StepType.CC_DCH, StepType.CV_DCH, StepType.CCCV_DCH}
+
+
 def cycle_summary(
     rows: List,
     label: Union[str, List[Label]] = "Cycle Summary",
@@ -94,10 +99,16 @@ def cycle_summary(
     """Summarize cycling rows into one capacity and efficiency record per cycle.
 
     Rows are grouped by ``cycle_count``; rows without one are skipped. The
-    charge capacity of a cycle is the largest capacity of its ``CCCV_CHG``
-    rows and the discharge capacity the largest of its ``CC_DCH`` rows, each
-    converted to coulomb before the comparison. A capacity is ``None`` when
-    the cycle has no such rows or they carry no capacity. Rows without a
+    charge capacity of a cycle is the sum of the capacity increases of all its
+    charge steps (``CC_CHG``, ``CV_CHG``, ``CCCV_CHG``), the discharge
+    capacity the same sum over its discharge steps (``CC_DCH``, ``CV_DCH``,
+    ``CCCV_DCH``). A step is a run of consecutive rows with the same cycle,
+    ``step_count`` and ``step_type``. Its increase is its last capacity minus
+    a baseline: the capacity of the row before the step if the step continues
+    that counter (first value not below it), else zero (the cycler reset the
+    counter).
+    Capacities are converted to coulomb first. A capacity is ``None`` when
+    the cycle has no such steps or they carry no capacity. Rows without a
     ``step_type`` count for neither. The result is sorted by cycle number.
 
     The discharge coulomb efficiency of a cycle is its discharge capacity
@@ -107,9 +118,14 @@ def cycle_summary(
     """
     charge: Dict[float, Optional[float]] = {}
     discharge: Dict[float, Optional[float]] = {}
+    previous: Optional[float] = None  # capacity of the last row that had one
+    step_key = None  # (cycle, step_count, step_type) of the current step
+    last: Optional[float] = None  # capacity of the previous row in the step
     for row in rows:
+        capacity = _in_coulomb(getattr(row, "capacity", None))
         cycle = getattr(row, "cycle_count", None)
         if cycle is None or cycle.value is None:
+            previous = capacity if capacity is not None else previous
             continue
         number = cycle.value
         charge.setdefault(number, None)
@@ -117,16 +133,23 @@ def cycle_summary(
         step = getattr(row, "step_type", None)
         target = (
             charge
-            if step == StepType.CCCV_CHG
-            else discharge if step == StepType.CC_DCH else None
+            if step in _CHARGE_STEPS
+            else discharge if step in _DISCHARGE_STEPS else None
         )
-        if target is None:
-            continue
-        capacity = _in_coulomb(getattr(row, "capacity", None))
-        if capacity is not None and (
-            target[number] is None or capacity > target[number]
-        ):
-            target[number] = capacity
+        count = getattr(row, "step_count", None)
+        key = (number, count.value if count is not None else None, step)
+        if key != step_key:
+            step_key = key
+            last = None
+        if target is not None and capacity is not None:
+            if last is None:
+                # first row of the step: continue the counter or start at zero
+                base = previous if previous is not None and capacity >= previous else 0
+            else:
+                base = last
+            target[number] = (target[number] or 0.0) + capacity - base
+            last = capacity
+        previous = capacity if capacity is not None else previous
 
     def _value(capacity: Optional[float]) -> Optional[ElectricCharge]:
         return None if capacity is None else ElectricCharge(value=capacity)
