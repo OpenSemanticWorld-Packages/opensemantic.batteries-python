@@ -10,16 +10,18 @@ from __future__ import annotations
 import random
 from typing import List
 
+from opensemantic.batteries import (
+    LinkedTestProcedureItem,
+    ProcedureLinkedElectrochemicalTest,
+)
 from opensemantic.batteries.v1 import (  # noqa: F401 (re-exported to the examples)
     AgingTestProcedure,
     CyclingDataRow,
     CylindricalCell,
     ElectrochemicalCyclingDataset,
-    ElectrochemicalTest,
     ElectrochemicalTestProcedure,
     FormationTestProcedure,
     PrismaticCell,
-    TestProcedureItem,
 )
 from opensemantic.characteristics.quantitative.v1 import (
     Count,
@@ -105,12 +107,16 @@ aging_test_b = AgingTestProcedure(label=[Label(text="Aging Test B")])
 formation_procedure = FormationTestProcedure(label=[Label(text="Formation Test")])
 
 
-# ``TestProcedureItem.test_procedure_instance`` is a string instance reference
+# The generated ``TestProcedureItem`` drops the procedure link, so the tests use
+# the temporary ``LinkedTestProcedureItem`` and
+# ``ProcedureLinkedElectrochemicalTest`` (see the README, "Linking a test to
+# its procedure").
+# ``test_procedure_instance`` is a string instance reference
 # (an OSW IRI like ``Item:OSW…``), not the procedure object — so link each
 # procedure by its ``get_iri()``. The dashboard resolves the IRI back to the
 # procedure object via its procedure_objects map (see BatteryDataView).
 test_procedure_aging_test_a = [
-    TestProcedureItem(
+    LinkedTestProcedureItem(
         test_procedure_subcategory="Category:OSWdda41d4a4ec0421babe0295c6edcb5df",
         test_procedure_instance=aging_test_a.get_iri(),
         test_procedure_instance_property="Property:HasProcedure",
@@ -119,7 +125,7 @@ test_procedure_aging_test_a = [
 
 
 test_procedure_aging_test_b = [
-    TestProcedureItem(
+    LinkedTestProcedureItem(
         test_procedure_subcategory="Category:OSWdda41d4a4ec0421babe0295c6edcb5df",
         test_procedure_instance=aging_test_b.get_iri(),
         test_procedure_instance_property="Property:HasProcedure",
@@ -128,7 +134,7 @@ test_procedure_aging_test_b = [
 
 
 test_procedure_formation_procedure = [
-    TestProcedureItem(
+    LinkedTestProcedureItem(
         test_procedure_subcategory="Category:OSWdda41d4a4ec0421babe0295c6edcb5df",
         test_procedure_instance=formation_procedure.get_iri(),
         test_procedure_instance_property="Property:HasProcedure",
@@ -141,14 +147,14 @@ test_procedure_formation_procedure = [
 # ---------------------------------------------------------------------------
 
 # Cell A: AgingTestA + Formation
-test_cell_a_aging_a = ElectrochemicalTest(
+test_cell_a_aging_a = ProcedureLinkedElectrochemicalTest(
     label=[Label(text="Cell A - Aging (A)")],
     device_under_test=[cell_a],
     test_procedure=test_procedure_aging_test_a,
     output=_make_dataset("Cell A - Aging (A) Dataset"),
 )
 
-test_cell_a_formation = ElectrochemicalTest(
+test_cell_a_formation = ProcedureLinkedElectrochemicalTest(
     label=[Label(text="Cell A - Formation")],
     device_under_test=[cell_a],
     test_procedure=test_procedure_formation_procedure,
@@ -156,21 +162,21 @@ test_cell_a_formation = ElectrochemicalTest(
 )
 
 # Cell B: AgingTestA + AgingTestB + Formation
-test_cell_b_aging_a = ElectrochemicalTest(
+test_cell_b_aging_a = ProcedureLinkedElectrochemicalTest(
     label=[Label(text="Cell B - Aging (A)")],
     device_under_test=[cell_b],
     test_procedure=test_procedure_aging_test_a,
     output=_make_dataset("Cell B - Aging (A) Dataset"),
 )
 
-test_cell_b_aging_b = ElectrochemicalTest(
+test_cell_b_aging_b = ProcedureLinkedElectrochemicalTest(
     label=[Label(text="Cell B - Aging (B)")],
     device_under_test=[cell_b],
     test_procedure=test_procedure_aging_test_b,
     output=_make_dataset("Cell B - Aging (B) Dataset"),
 )
 
-test_cell_b_formation = ElectrochemicalTest(
+test_cell_b_formation = ProcedureLinkedElectrochemicalTest(
     label=[Label(text="Cell B - Formation")],
     device_under_test=[cell_b],
     test_procedure=test_procedure_formation_procedure,
@@ -178,7 +184,7 @@ test_cell_b_formation = ElectrochemicalTest(
 )
 
 # Cell C: Formation only
-test_cell_c_formation = ElectrochemicalTest(
+test_cell_c_formation = ProcedureLinkedElectrochemicalTest(
     label=[Label(text="Cell C - Formation")],
     device_under_test=[cell_c],
     test_procedure=test_procedure_formation_procedure,

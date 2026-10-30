@@ -30,11 +30,13 @@ from osw.defaults import params as default_params
 from osw.defaults import paths as default_paths
 from osw.express import OswExpress
 
-from opensemantic.batteries import CyclingDatasetController
+from opensemantic.batteries import (
+    CyclingDatasetController,
+    LinkedTestProcedureItem,
+    ProcedureLinkedElectrochemicalTest,
+)
 from opensemantic.batteries.v1 import (
     CyclingDataRow,
-    ElectrochemicalTest,
-    TestProcedureItem,
 )
 from opensemantic.characteristics.quantitative.v1 import (
     Count,
@@ -112,7 +114,9 @@ def sample_cycling_data() -> List[CyclingDataRow]:
     return rows
 
 
-def build_test(cell: str, procedure: str, label: str) -> ElectrochemicalTest:
+def build_test(
+    cell: str, procedure: str, label: str
+) -> ProcedureLinkedElectrochemicalTest:
     """One test run with its dataset inline.
 
     ``TestProcedureItem.test_procedure_instance`` takes an OSW IRI, not the
@@ -123,11 +127,11 @@ def build_test(cell: str, procedure: str, label: str) -> ElectrochemicalTest:
         label=[Label(text=f"{label} Dataset")],
         data=sample_cycling_data(),
     )
-    return ElectrochemicalTest(
+    return ProcedureLinkedElectrochemicalTest(
         label=[Label(text=label)],
         device_under_test=[CELLS[cell]],
         test_procedure=[
-            TestProcedureItem(
+            LinkedTestProcedureItem(
                 test_procedure_subcategory=PROCEDURE_SUBCATEGORY,
                 test_procedure_instance=PROCEDURES[procedure],
                 test_procedure_instance_property="Property:HasProcedure",

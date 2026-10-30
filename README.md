@@ -126,9 +126,11 @@ Stage status today: **parse**, **unify**, **upload** and the read-side
 example scripts in `examples/osl/` (`upload_example_data_OSL.py` and
 `upload_large_dataset_OSL.py`), not by a library function. Large datasets store
 their rows in an uploaded `WikiFile` (JSON or CSV) that the dataset references
-through its distributions, instead of inline in `Dataset.data`. With the
-current generated models, uploaded tests have no procedure link; see the known
-issue under [Linking a test to its procedure](#linking-a-test-to-its-procedure).
+through its distributions, instead of inline in `Dataset.data`. The current
+generated models drop the procedure link of a test, so the upload scripts use
+temporary classes that keep it (the synthetic example data does the same); see
+the known issue under
+[Linking a test to its procedure](#linking-a-test-to-its-procedure).
 
 ## Installation
 
@@ -253,11 +255,35 @@ single `.protocol` object is still accepted as a legacy fallback. `output` is a
 > `test_procedure_instance_property` are missing, and Pydantic drops them
 > without an error. Until the schema is fixed (see
 > [Pending upstream fixes](#pending-upstream-fixes)), the code above creates a
-> test without a procedure link. As a result, the synthetic example
-> (`examples/synthetic/battery_dashboard.py`) matches no data, and tests
-> uploaded with the `examples/osl` scripts have no procedure link. Data already
-> in the wiki is not affected, and the lazy and Maccor dashboards do not use
-> this field.
+> test without a procedure link. The non-lazy `BatteryDataView` then matches
+> no data for that test, because it resolves the procedure through this
+> field. The OSL dashboard also needs the link: its dataset query matches a
+> test through
+> `HasProcedure` (`[[-HasOutput.HasProcedure::...]]`), so a stored test
+> without it is not found when a cell and a procedure are selected. The lazy
+> and Maccor dashboards do not use this field.
+>
+> **Temporary fix:** `opensemantic.batteries` provides
+> `LinkedTestProcedureItem` and `ProcedureLinkedElectrochemicalTest`
+> (`src/opensemantic/batteries/_procedure_link.py`). They add the two fields
+> with the definitions of the earlier generated model, so the link is stored.
+> The synthetic example data (`examples/synthetic/battery_example_data.py`)
+> and the upload scripts (`examples/osl/upload_example_data_OSL.py`,
+> `examples/osl/upload_large_dataset_OSL.py` and
+> `examples/dev/upload_multistage_dataset_OSL.py`) use them:
+>
+> ```python
+> test = ProcedureLinkedElectrochemicalTest(
+>     label=[Label(text="Cell A - Formation")],
+>     test_procedure=[
+>         LinkedTestProcedureItem(test_procedure_instance=procedure.get_iri())
+>     ],
+>     output=[dataset],
+> )
+> ```
+>
+> Remove the module and use the generated classes again once the schema ships
+> the fields.
 
 ## Pydantic layers (v1 and v2)
 
@@ -622,11 +648,13 @@ skips the test.
 - **Restore the procedure link in `TestProcedureItem`**: the regenerated model
   has only `test_procedure_subcategory`. Add `test_procedure_instance` (the
   procedure's OSW IRI) and `test_procedure_instance_property` back to the
-  `world.opensemantic.batteries` schema and regenerate. Until then the
-  non-lazy `BatteryDataView`, `examples/synthetic/battery_dashboard.py` and the
-  `examples/osl` upload scripts lose the test-to-procedure link (see
-  [Linking a test to its procedure](#linking-a-test-to-its-procedure)), and
-  `docs/media/battery_dashboard.png` cannot be regenerated with data.
+  `world.opensemantic.batteries` schema and regenerate, then remove the
+  temporary `_procedure_link.py` module. Until then the synthetic example
+  data and the upload scripts keep the test-to-procedure link only through
+  the temporary classes, and tests built with the generated classes have no
+  link (see
+  [Linking a test to its procedure](#linking-a-test-to-its-procedure)).
+  `docs/media/battery_dashboard.png` has not been regenerated since.
 - **Release `opensemantic.base`**: `setup.cfg` installs it from the `main` branch
   of its repository, because `_cycling.py` needs the dataset controller that is
   merged but not released. Replace the git URL with `opensemantic.base>=0.43.0`

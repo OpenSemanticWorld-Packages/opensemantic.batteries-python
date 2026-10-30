@@ -64,6 +64,8 @@ from opensemantic.base import _pint_csv
 from opensemantic.base._dataset_controller_mixin import row_class_of
 from opensemantic.batteries import (
     CyclingDatasetController,
+    LinkedTestProcedureItem,
+    ProcedureLinkedElectrochemicalTest,
     StepType,
     StepTypedCyclingDataRow,
     cycle_summary,
@@ -71,8 +73,6 @@ from opensemantic.batteries import (
 from opensemantic.batteries.v1 import (
     AgingTestProcedure,
     CylindricalCell,
-    ElectrochemicalTest,
-    TestProcedureItem,
 )
 from opensemantic.core.v1 import Description, Label
 
@@ -279,13 +279,23 @@ def validate(rows: List[StepTypedCyclingDataRow]) -> None:
         previous = (time_s, cycle, row.step_type, capacity)
 
 
-def check_dq(rows, dq: Dict[int, float], max_cycles: Optional[int]) -> float:
-    """Compare ``cycle_summary`` discharge capacity (C -> mAh) with source dq."""
+def check_dq(
+    rows, dq: Dict[int, float], max_cycles: Optional[int], partial: bool = False
+) -> float:
+    """Compare ``cycle_summary`` discharge capacity (C -> mAh) with source dq.
+
+    With ``partial`` a cycle without discharge (cut off in a shortened CSV) is
+    skipped and reported instead of raising.
+    """
     summary = cycle_summary(rows)
     diffs = {}
+    skipped = []
     for row in summary.data:
         cycle = int(row.cycle_count.value)
         if row.discharge_capacity is None:
+            if partial:
+                skipped.append(cycle)
+                continue
             raise ValueError(f"cycle {cycle}: no discharge capacity in summary")
         mah = row.discharge_capacity.value / 3.6  # 1 mAh = 3.6 C
         diffs[cycle] = abs(mah - float(dq[cycle + 1]))
@@ -294,6 +304,8 @@ def check_dq(rows, dq: Dict[int, float], max_cycles: Optional[int]) -> float:
         f"dq check: cycles {first}..{last}, diff first={diffs[first]:.3e} mAh, "
         f"last={diffs[last]:.3e} mAh, max={max(diffs.values()):.3e} mAh"
     )
+    if skipped:
+        print(f"dq check: skipped cycles without discharge: {skipped}")
     return max(diffs.values())
 
 
@@ -331,13 +343,15 @@ def build_entities(cell_id: str, c_rate: int):
     return cell, procedure, name
 
 
-def build_test(cell, procedure, name, cell_id, dataset) -> ElectrochemicalTest:
-    return ElectrochemicalTest(
+def build_test(
+    cell, procedure, name, cell_id, dataset
+) -> ProcedureLinkedElectrochemicalTest:
+    return ProcedureLinkedElectrochemicalTest(
         uuid=uuid.uuid5(NAMESPACE, f"test:{cell_id}"),
         label=[Label(text=f"Cell {cell_id} - {name}")],
         device_under_test=[cell.get_iri()],
         test_procedure=[
-            TestProcedureItem(
+            LinkedTestProcedureItem(
                 test_procedure_subcategory=AGING_PROCEDURE,
                 test_procedure_instance=procedure.get_iri(),
                 test_procedure_instance_property="Property:HasProcedure",
@@ -363,6 +377,13 @@ def main() -> None:
     parser.add_argument("--cell", default="4-3", help="cell id, e.g. 4-3")
     parser.add_argument("--data-dir", type=Path, default=DATA_DIR)
     parser.add_argument("--max-cycles", type=int, default=None)
+    parser.add_argument(
+        "--csv",
+        type=Path,
+        default=None,
+        help="take the rows from this CSV (e.g. a shortened csv_osl file) "
+        "instead of the pickle",
+    )
     parser.add_argument("--domain", default=WIKI_DOMAIN)
     parser.add_argument("--cred-filepath", type=Path, default=CRED_FILEPATH)
     parser.add_argument("--format", choices=["json", "csv"], default="json")
@@ -385,7 +406,12 @@ def main() -> None:
     print(f"First discharge stage: {c_rate}C -> {procedure_name}")
 
     with phase("frame", timings):
-        frame = build_frame(cycles, args.max_cycles)
+        if args.csv is not None:
+            # the pickle still gives the C-rate and dq; the rows come from the CSV
+            frame = _pint_csv.read_csv(args.csv.read_bytes())
+            print(f"Read {len(frame)} rows from {args.csv}")
+        else:
+            frame = build_frame(cycles, args.max_cycles)
 
     with phase("rows", timings):
         dataset = CyclingDatasetController.from_df(
@@ -400,7 +426,7 @@ def main() -> None:
     with phase("validate", timings):
         validate(rows)
         print("Validation passed")
-        check_dq(rows, content["dq"], args.max_cycles)
+        check_dq(rows, content["dq"], args.max_cycles, partial=args.csv is not None)
 
     print(f"Cell {cell.get_iri()}, procedure {procedure.get_iri()}")
 

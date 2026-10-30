@@ -36,6 +36,10 @@ try:
         MaccorImporter,
         read_maccor,
     )
+    from opensemantic.batteries._procedure_link import (  # noqa: F401
+        LinkedTestProcedureItem,
+        ProcedureLinkedElectrochemicalTest,
+    )
 except ImportError as _error:  # pragma: no cover - an optional dependency is missing
     import logging as _logging
 
