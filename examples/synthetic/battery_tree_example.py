@@ -1,7 +1,7 @@
 """Minimal example: auto-build a Wunderbaum from in-memory OO-LD objects.
 
 Run with:
-    panel serve examples/battery_tree_example.py --dev
+    panel serve examples/synthetic/battery_tree_example.py --dev
 
 What it shows
 -------------

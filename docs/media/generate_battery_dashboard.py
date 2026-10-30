@@ -1,6 +1,6 @@
 """Record a demo GIF (and a still) for the **sample** battery dashboard.
 
-Serves ``examples/battery_dashboard.py`` (synthetic sample data: three cells,
+Serves ``examples/synthetic/battery_dashboard.py`` (synthetic sample data: three cells,
 three procedures, six tests) and drives the UI with Playwright, capturing frames
 stitched into an animated GIF.
 
@@ -44,7 +44,7 @@ from playwright.sync_api import sync_playwright
 
 MEDIA_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_DIR = os.path.dirname(os.path.dirname(MEDIA_DIR))
-EXAMPLE = os.path.join(REPO_DIR, "examples", "battery_dashboard.py")
+EXAMPLE = os.path.join(REPO_DIR, "examples", "synthetic", "battery_dashboard.py")
 PORT = 5022
 URL = f"http://localhost:{PORT}/battery_dashboard"
 # Tall viewport so the whole sidebar (down to the ``current`` row of the Axes &

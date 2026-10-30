@@ -53,7 +53,7 @@ the example wiring don't change.
 is imported lazily (only `connect_osw` needs it), so importing the `view` package
 never requires the optional `osw` dependency — install it with the `osl` extra
 (`pip install -e ".[osl]"`). Runnable wiring:
-[`examples/battery_dashboard_OSL.py`](../../../../examples/battery_dashboard_OSL.py).
+[`examples/osl/battery_dashboard_OSL.py`](../../../../examples/osl/battery_dashboard_OSL.py).
 
 ```python
 from opensemantic.batteries.view import (
@@ -79,7 +79,7 @@ one wins and a warning is logged. A cell without a parent category goes to
 The backend and the lazy view log to `logging.getLogger("opensemantic.batteries.view")`:
 queries (DEBUG: query text, INFO: hits, duration and retries), row loading,
 selections, plot rebuilds and mapping problems (WARNING). Configure the level and
-the handlers as usual; `examples/battery_dashboard_OSL.py` reads the level from
+the handlers as usual; `examples/osl/battery_dashboard_OSL.py` reads the level from
 the environment variable `OSB_VIEW_LOG` (default `INFO`).
 
 `LazyBatteryDataView(..., show_log=True)` shows the log card (newest record
@@ -100,7 +100,7 @@ are named separately). Use
 `StepTypedCyclingDataRow` as `row_class` for such data.
 
 To try the lazy view without a wiki (no credentials, no network) run
-[`examples/battery_dashboard_lazy.py`](../../../../examples/battery_dashboard_lazy.py),
+[`examples/synthetic/battery_dashboard_lazy.py`](../../../../examples/synthetic/battery_dashboard_lazy.py),
 which wires an in-memory `BatteryDataBackend` (the same fixture the
 `tests/test_lazy_view.py` regression tests use).
 
@@ -134,7 +134,7 @@ children, which the next `source` echo expands, serialising the lazy loads.
 
 ## Quick start
 
-A runnable version is in [`examples/battery_dashboard.py`](../../../../examples/battery_dashboard.py).
+A runnable version is in [`examples/synthetic/battery_dashboard.py`](../../../../examples/synthetic/battery_dashboard.py).
 
 ```python
 import panel as pn
@@ -173,7 +173,7 @@ view = BatteryDataView(
 view.servable()
 ```
 
-Run it: `panel serve examples/battery_dashboard.py --dev`.
+Run it: `panel serve examples/synthetic/battery_dashboard.py --dev`.
 
 ## How it fits together
 

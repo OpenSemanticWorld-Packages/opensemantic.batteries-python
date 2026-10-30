@@ -30,7 +30,7 @@ from opensemantic.characteristics.quantitative.v1 import (
 from opensemantic.core.v1 import Item, Label
 from opensemantic.lab.v1 import AnalyticalLaboratoryProcess
 
-# --- Minimal example schema (mirrors examples/battery_example_data.py) -------
+# --- Minimal example schema (mirrors examples/synthetic/battery_example_data.py) ---
 
 
 class _Row(Characteristic):

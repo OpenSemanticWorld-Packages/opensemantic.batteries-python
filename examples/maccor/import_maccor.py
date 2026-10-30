@@ -2,7 +2,7 @@
 
 Run from the package root:
 
-    python examples/import_maccor.py
+    python examples/maccor/import_maccor.py
 
 Requires the optional Maccor importer dependency:
 
@@ -16,7 +16,7 @@ import yaml
 from opensemantic.batteries import CyclingDatasetController, read_maccor
 
 HERE = Path(__file__).resolve().parent
-MACCOR_DIR = HERE.parent / "tests" / "data" / "cycling" / "maccor"
+MACCOR_DIR = HERE.parent.parent / "tests" / "data" / "cycling" / "maccor"
 SOURCE = MACCOR_DIR / "231004_test_data_export2_trimmed.024.txt"
 
 # 1. Import the cycler export into a typed, unit-aware dataset.

@@ -5,10 +5,10 @@ script runs any of them against a wiki so their result can be inspected on its
 own. Category and instance IRIs come from the generated classes where possible,
 so they do not have to be kept in sync by hand.
 
-Run from the ``examples`` directory, after filling in ``accounts.pwd.yaml``::
+Run from any directory, after filling in ``examples/accounts.pwd.yaml``::
 
-    python osl_queries.py                     # list the available queries
-    python osl_queries.py --query datasets
+    python examples/osl/osl_queries.py                     # list the available queries
+    python examples/osl/osl_queries.py --query datasets
 
 Needs the optional ``osl`` extra::
 
@@ -31,7 +31,7 @@ from opensemantic.batteries.v1 import (
 )
 
 WIKI_DOMAIN = "wiki-dev.open-semantic-lab.org"
-CRED_FILEPATH = Path("accounts.pwd.yaml")
+CRED_FILEPATH = Path(__file__).resolve().parent.parent / "accounts.pwd.yaml"
 
 # Instances referenced by the dataset query, created by upload_example_data_OSL.py.
 CELL_B = "Item:OSW4a20efb16be64868ab9d16a97838434a"

@@ -1,7 +1,7 @@
 """Battery cycling dashboard example.
 
 Run with:
-    panel serve examples/battery_dashboard.py --dev
+    panel serve examples/synthetic/battery_dashboard.py --dev
 
 The cell and procedure trees are built automatically from the Python objects
 using OOLDTreeBuilder — no manually written nodes/edges/objects dicts.

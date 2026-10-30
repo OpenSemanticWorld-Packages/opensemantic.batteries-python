@@ -8,11 +8,11 @@ Cells and procedures are referenced by IRI; they are expected to exist on the
 wiki already. For a large dataset stored out-of-band in a file, see
 ``upload_large_dataset_OSL.py``.
 
-Nothing is written unless ``--store`` is passed. Run from the ``examples``
-directory, after filling in ``accounts.pwd.yaml``::
+Nothing is written unless ``--store`` is passed. Run from any
+directory, after filling in ``examples/accounts.pwd.yaml``::
 
-    python upload_example_data_OSL.py
-    python upload_example_data_OSL.py --store
+    python examples/osl/upload_example_data_OSL.py
+    python examples/osl/upload_example_data_OSL.py --store
 
 Needs the optional ``osl`` extra::
 
@@ -46,7 +46,7 @@ from opensemantic.characteristics.quantitative.v1 import (
 from opensemantic.core.v1 import Label
 
 WIKI_DOMAIN = "wiki-dev.open-semantic-lab.org"
-CRED_FILEPATH = Path("accounts.pwd.yaml")
+CRED_FILEPATH = Path(__file__).resolve().parent.parent / "accounts.pwd.yaml"
 
 CELLS = {
     "cell_a": "Item:OSW7bae5d74c11842fc8fdc5f12d264a5f1",

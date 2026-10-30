@@ -1,6 +1,6 @@
 """Record a demo GIF (and a still) for the **Maccor** battery dashboard.
 
-Serves ``examples/battery_dashboard_maccor.py`` (a real Maccor cycler file
+Serves ``examples/maccor/battery_dashboard_maccor.py`` (a real Maccor cycler file
 plotted in ``BatteryDataView`` — self-contained, no database) and drives the UI
 with Playwright, capturing frames that are stitched into an animated GIF.
 
@@ -32,7 +32,7 @@ from playwright.sync_api import sync_playwright
 
 MEDIA_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_DIR = os.path.dirname(os.path.dirname(MEDIA_DIR))
-EXAMPLE = os.path.join(REPO_DIR, "examples", "battery_dashboard_maccor.py")
+EXAMPLE = os.path.join(REPO_DIR, "examples", "maccor", "battery_dashboard_maccor.py")
 PORT = 5021
 URL = f"http://localhost:{PORT}/battery_dashboard_maccor"
 VIEWPORT = {"width": 1500, "height": 1000}

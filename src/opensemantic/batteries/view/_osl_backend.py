@@ -2,7 +2,7 @@
 
 Reference :class:`~opensemantic.batteries.view._backend.BatteryDataBackend`
 implementation over a **live OSL wiki**. It answers the view's four questions
-with semantic searches (see ``examples/osl_queries.py`` for the raw calls):
+with semantic searches (see ``examples/osl/osl_queries.py`` for the raw calls):
 
 * sub-categories of a category ``C``   ``[[SubClassOf::C]]``
 * instances of a category ``C``        ``[[HasSchema::C]]``
@@ -24,7 +24,7 @@ A cycling dataset can carry its rows in one of two ways, both handled by
   ``data`` is cleared; the file is referenced from the dataset's first
   ``Distribution`` (``distributions[0].download_url``, a full wiki file URL). The
   backend downloads that file, parses its bare ``data`` array and rebuilds the
-  rows in memory (the reverse of ``examples/upload_large_dataset_OSL.py``).
+  rows in memory (the reverse of ``examples/osl/upload_large_dataset_OSL.py``).
 
 ``osw`` is imported lazily (only :func:`connect_osw` and the out-of-band download
 path need it), so importing this module — and the whole ``view`` package — never
@@ -321,7 +321,7 @@ class OSLBatteryBackend(BatteryDataBackend):
         self._name_cache[iri] = name
         return name
 
-    # -- Wiki queries (see examples/osl_queries.py) ------------------------------
+    # -- Wiki queries (see examples/osl/osl_queries.py) ------------------------------
 
     def _search(self, query: str) -> List[str]:
         """Run a semantic search, returning page titles (``[]`` on empty/failure)."""
@@ -402,7 +402,7 @@ class OSLBatteryBackend(BatteryDataBackend):
         ``cell_iri`` / ``proc_iri`` may each be a single IRI or a ``||``-joined
         disjunction of IRIs (see :meth:`_dataset_titles_or`).
 
-        Uses the inverse-property path from ``examples/osl_queries.py``: find each
+        Uses the inverse-property path from ``examples/osl/osl_queries.py``: find each
         page that is the ``HasOutput`` of a test whose schema / DUT / procedure
         match. The results are the dataset pages themselves, so
         ``load_entity(title).data`` yields the rows directly — no second hop

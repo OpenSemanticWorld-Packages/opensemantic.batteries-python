@@ -16,11 +16,11 @@ else here changes.
 
 Run with::
 
-    panel serve examples/battery_dashboard_OSL.py --dev
+    panel serve examples/osl/battery_dashboard_OSL.py --dev
 
 Requires the ``osw`` package (``pip install -e ".[osl]"``) and a credentials
-file next to this script (``examples/accounts.pwd.yaml``) — the same connection
-``examples/osl_queries.py`` runs. Without them the dashboard still builds; the trees
+file in the parent folder (``examples/accounts.pwd.yaml``) — the same connection
+``examples/osl/osl_queries.py`` runs. Without them the dashboard still builds; the trees
 just stay empty because every query returns nothing.
 """
 
@@ -60,7 +60,7 @@ logger.propagate = False
 pn.extension()
 
 backend = OSLBatteryBackend(
-    osw_obj=connect_osw(Path(__file__).parent / "accounts.pwd.yaml"),
+    osw_obj=connect_osw(Path(__file__).resolve().parent.parent / "accounts.pwd.yaml"),
     row_class=StepTypedCyclingDataRow,
     field_names=[
         "test_time",

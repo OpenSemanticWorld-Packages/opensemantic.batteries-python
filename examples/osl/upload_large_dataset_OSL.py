@@ -17,11 +17,11 @@ it holds is read as an ``Item`` even though pydantic keeps the dataset's own
 fields. Hence step 2: the dataset's own page carries the distribution and the
 test references it by IRI, so nothing depends on how the nested copy is typed.
 
-Nothing is written unless ``--store`` is passed. Run from the ``examples``
-directory, after filling in ``accounts.pwd.yaml``::
+Nothing is written unless ``--store`` is passed. Run from any
+directory, after filling in ``examples/accounts.pwd.yaml``::
 
-    python upload_large_dataset_OSL.py --dataset cell_c
-    python upload_large_dataset_OSL.py --dataset cell_d --store
+    python examples/osl/upload_large_dataset_OSL.py --dataset cell_c
+    python examples/osl/upload_large_dataset_OSL.py --dataset cell_d --store
 
 Needs the optional extras::
 
@@ -43,10 +43,14 @@ from opensemantic.batteries.v1 import ElectrochemicalTest, TestProcedureItem
 from opensemantic.core.v1 import Label
 
 WIKI_DOMAIN = "wiki-dev.open-semantic-lab.org"
-CRED_FILEPATH = Path("accounts.pwd.yaml")
+CRED_FILEPATH = Path(__file__).resolve().parent.parent / "accounts.pwd.yaml"
 
 MACCOR_DIR = (
-    Path(__file__).resolve().parent.parent / "tests" / "data" / "cycling" / "maccor"
+    Path(__file__).resolve().parent.parent.parent
+    / "tests"
+    / "data"
+    / "cycling"
+    / "maccor"
 )
 
 AGING_PROCEDURE = "Category:OSWdda41d4a4ec0421babe0295c6edcb5df"

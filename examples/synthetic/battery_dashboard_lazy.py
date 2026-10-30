@@ -1,53 +1,56 @@
-"""Lazy battery dashboard over real Maccor cycler files.
+"""Lazy battery dashboard over an in-memory test-double backend.
 
-Same behaviour as ``battery_dashboard_lazy.py`` (lazy trees, cascade,
-instances), but each (cell, procedure) pair plots a real Maccor export read
-with ``read_maccor`` instead of synthetic rows. No credentials or network are
-needed, so this is the local development environment for
-``battery_dashboard_OSL.py``.
+Mirrors ``battery_dashboard_OSL.py`` but with a tiny hand-built
+:class:`~opensemantic.batteries.view.BatteryDataBackend` instead of a live OSL
+wiki — so the lazy trees / cascade / instances behaviour can be driven (and
+reproduced in a browser) without credentials or network.
 
 Run with:
-    panel serve examples/battery_dashboard_maccor.py --dev
+    panel serve examples/synthetic/battery_dashboard_lazy.py --dev
 
 Hierarchy:
-    Cells:       BatteryCell -> CylindricalCell -> [Cell A, Cell B]
-    Procedures:  ElectrochemicalTestProcedure -> AgingTestProcedure
-                     -> [Aging A, Aging B]
-
-Each (cell, procedure) pair has its own Maccor file,
-``tests/data/cycling/maccor/cell<A|B>_aging<A|B>_mims_client1.txt``. Each
-file is read once, the first time a selection needs it.
+    Cells:       BatteryCell -> {CylindricalCell -> [Cell A, Cell B],
+                                 PrismaticCell   -> [Cell C]}
+    Procedures:  ElectrochemicalTestProcedure -> {AgingTestProcedure   -> [Aging A],
+                                                  FormationTestProcedure -> [Formation]}
 """
 
 from __future__ import annotations
 
-from functools import lru_cache
-from pathlib import Path
 from typing import Dict, List, Tuple
 
 import panel as pn
 
-from opensemantic.batteries import StepTypedCyclingDataRow, read_maccor
+from opensemantic.batteries.v1 import CyclingDataRow
 from opensemantic.batteries.view import (
     BatteryDataBackend,
     Dataset,
     LazyBatteryDataView,
     TreeNode,
 )
+from opensemantic.characteristics.quantitative.v1 import (
+    ElectricCurrent,
+    Time,
+    Voltage,
+)
 
 pn.extension()
 
-_MACCOR_DIR = Path(__file__).parent.parent / "tests" / "data" / "cycling" / "maccor"
+
+def _rows() -> List[CyclingDataRow]:
+    """Three of the row's fields are enough here; the rest are optional."""
+    return [
+        CyclingDataRow(
+            test_time=Time(value=float(i)),
+            voltage=Voltage(value=3.0 + 0.1 * i),
+            current=ElectricCurrent(value=0.5 * (i % 2)),
+        )
+        for i in range(5)
+    ]
 
 
-@lru_cache(maxsize=None)
-def _rows(path: Path) -> List[StepTypedCyclingDataRow]:
-    """Read a Maccor file; its rows are already ``StepTypedCyclingDataRow``."""
-    return read_maccor(path, fmt="mims_client1").data
-
-
-class MaccorBatteryBackend(BatteryDataBackend):
-    """A fixed hierarchy with one Maccor file per (cell, procedure) pair."""
+class MemoryBatteryBackend(BatteryDataBackend):
+    """A fixed, in-memory hierarchy + dataset table for reproducing the view."""
 
     # category / instance iri -> (label, kind, [child iris])
     _NODES: Dict[str, Tuple[str, str, List[str]]] = {
@@ -55,41 +58,48 @@ class MaccorBatteryBackend(BatteryDataBackend):
         "Category:BatteryCell": (
             "BatteryCell",
             "class",
-            ["Category:CylindricalCell"],
+            ["Category:CylindricalCell", "Category:PrismaticCell"],
         ),
         "Category:CylindricalCell": (
             "CylindricalCell",
             "class",
             ["Item:CellA", "Item:CellB"],
         ),
+        "Category:PrismaticCell": ("PrismaticCell", "class", ["Item:CellC"]),
         "Item:CellA": ("Cell A", "instance", []),
         "Item:CellB": ("Cell B", "instance", []),
+        "Item:CellC": ("Cell C", "instance", []),
         # procedures
         "Category:ElectrochemicalTestProcedure": (
             "ElectrochemicalTestProcedure",
             "class",
-            ["Category:AgingTestProcedure"],
+            ["Category:AgingTestProcedure", "Category:FormationTestProcedure"],
         ),
         "Category:AgingTestProcedure": (
             "AgingTestProcedure",
             "class",
-            ["Item:AgingA", "Item:AgingB"],
+            ["Item:AgingA"],
+        ),
+        "Category:FormationTestProcedure": (
+            "FormationTestProcedure",
+            "class",
+            ["Item:Formation"],
         ),
         "Item:AgingA": ("Aging A", "instance", []),
-        "Item:AgingB": ("Aging B", "instance", []),
+        "Item:Formation": ("Formation", "instance", []),
     }
 
-    # (cell iri, proc iri) -> Maccor file
-    _DATASETS: Dict[Tuple[str, str], Path] = {
-        ("Item:CellA", "Item:AgingA"): _MACCOR_DIR / "cellA_agingA_mims_client1.txt",
-        ("Item:CellB", "Item:AgingA"): _MACCOR_DIR / "cellB_agingA_mims_client1.txt",
-        ("Item:CellA", "Item:AgingB"): _MACCOR_DIR / "cellA_agingB_mims_client1.txt",
-        ("Item:CellB", "Item:AgingB"): _MACCOR_DIR / "cellB_agingB_mims_client1.txt",
+    # (cell iri, proc iri) that actually have a dataset
+    _DATASETS = {
+        ("Item:CellA", "Item:AgingA"),
+        ("Item:CellA", "Item:Formation"),
+        ("Item:CellB", "Item:Formation"),
+        ("Item:CellC", "Item:Formation"),
     }
 
     @property
     def row_class(self) -> type:
-        return StepTypedCyclingDataRow
+        return CyclingDataRow
 
     @property
     def cell_root(self) -> TreeNode:
@@ -111,13 +121,12 @@ class MaccorBatteryBackend(BatteryDataBackend):
         out: List[Dataset] = []
         for c in cell_iris:
             for p in proc_iris:
-                path = self._DATASETS.get((c, p))
-                if path is not None:
+                if (c, p) in self._DATASETS:
                     out.append(
                         Dataset(
                             id=f"{c}|{p}",
                             label=f"{self.page_name(c)} - {self.page_name(p)}",
-                            rows=_rows(path),
+                            rows=_rows(),
                             cell_iri=c,
                             procedure_iri=p,
                         )
@@ -130,8 +139,7 @@ class MaccorBatteryBackend(BatteryDataBackend):
 
 
 view = LazyBatteryDataView(
-    backend=MaccorBatteryBackend(),
-    title="Battery Cycling Dashboard - Maccor",
-    show_log=True,
+    backend=MemoryBatteryBackend(),
+    title="Battery Cycling Dashboard — In-memory",
 )
 view.servable()

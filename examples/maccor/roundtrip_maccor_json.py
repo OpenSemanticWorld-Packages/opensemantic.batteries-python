@@ -7,7 +7,7 @@ original.
 
 Run from the package root:
 
-    python examples/roundtrip_maccor_json.py
+    python examples/maccor/roundtrip_maccor_json.py
 
 Requires the optional Maccor importer dependency:
 
@@ -20,7 +20,7 @@ from pathlib import Path
 from opensemantic.batteries import CyclingDatasetController, read_maccor
 
 HERE = Path(__file__).resolve().parent
-MACCOR_DIR = HERE.parent / "tests" / "data" / "cycling" / "maccor"
+MACCOR_DIR = HERE.parent.parent / "tests" / "data" / "cycling" / "maccor"
 SOURCE = MACCOR_DIR / "raz-IDCyLIB-E1-full cell2_mims_client1_trimmed.txt"
 OUT_JSON = HERE / "roundtrip_maccor_dataset.json"
 

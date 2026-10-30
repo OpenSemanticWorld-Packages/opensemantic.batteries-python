@@ -290,7 +290,7 @@ def start_server(example, port, env=None, settle=12):
     ``settle`` is the seconds to wait for the first module execution (loading the
     data + building the trees) before returning. The log is written beside the
     recorders (``docs/media/``); serving runs from the repo root so the example's
-    ``from battery_example_data import ...`` resolves.
+    ``from battery_example_data import ...`` (in ``examples/synthetic``) resolves.
     """
     logf = open(os.path.join(MEDIA_DIR, f"_gen_server_{port}.log"), "w")
     proc_env = dict(os.environ)

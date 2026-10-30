@@ -358,7 +358,7 @@ print(enriched.to_df().pint.dequantify().to_csv())
 
 A runnable end-to-end example (import a Maccor file, derive a column, serialise,
 re-import, export CSV) is in
-[`examples/import_maccor.py`](examples/import_maccor.py).
+[`examples/maccor/import_maccor.py`](examples/maccor/import_maccor.py).
 
 ## Dashboard (view)
 
@@ -395,7 +395,7 @@ cycle series.
 
 ```bash
 pip install opensemantic.batteries[view]
-panel serve examples/battery_dashboard.py --dev
+panel serve examples/synthetic/battery_dashboard.py --dev
 ```
 
 ```python
@@ -405,28 +405,28 @@ from opensemantic.batteries.view import BatteryDataView, OOLDTreeBuilder, Python
 See [`src/opensemantic/batteries/view/README.md`](src/opensemantic/batteries/view/README.md)
 for the architecture (it extends `BaseDataView` from `opensemantic.base.view`),
 the unit-conversion design, and the v1/v2 layer pitfall. Runnable examples:
-[`examples/battery_dashboard.py`](examples/battery_dashboard.py) and
-[`examples/battery_tree_example.py`](examples/battery_tree_example.py).
+[`examples/synthetic/battery_dashboard.py`](examples/synthetic/battery_dashboard.py) and
+[`examples/synthetic/battery_tree_example.py`](examples/synthetic/battery_tree_example.py).
 
 ## Examples
 
 Commands run from the repository root unless noted. The OSL scripts default to
-`accounts.pwd.yaml` in the working directory, so they are run from `examples/`
+`examples/accounts.pwd.yaml`, so they run from any directory
 (see [`examples/accounts.pwd.yaml.template`](examples/accounts.pwd.yaml.template)),
-or given `--cred-filepath`.
+or take `--cred-filepath`.
 
 ### Dashboards
 
 ```bash
 pip install -e ".[view]"
 
-panel serve examples/battery_dashboard.py --dev         # synthetic data
-panel serve examples/battery_dashboard_maccor.py --dev  # real Maccor exports
-panel serve examples/battery_tree_example.py --dev      # tree only
-panel serve examples/battery_dashboard_lazy.py --dev    # lazily loaded trees
+panel serve examples/synthetic/battery_dashboard.py --dev         # synthetic data
+panel serve examples/maccor/battery_dashboard_maccor.py --dev  # real Maccor exports
+panel serve examples/synthetic/battery_tree_example.py --dev      # tree only
+panel serve examples/synthetic/battery_dashboard_lazy.py --dev    # lazily loaded trees
 
 pip install -e ".[osl]"
-panel serve examples/battery_dashboard_OSL.py --dev     # trees + data from OSL
+panel serve examples/osl/battery_dashboard_OSL.py --dev     # trees + data from OSL
 ```
 
 ### Importing and converting
@@ -434,8 +434,8 @@ panel serve examples/battery_dashboard_OSL.py --dev     # trees + data from OSL
 ```bash
 pip install -e ".[maccor]"
 
-python examples/import_maccor.py          # cycler file -> dataset -> DataFrame
-python examples/roundtrip_maccor_json.py  # dataset -> compact JSON -> dataset
+python examples/maccor/import_maccor.py          # cycler file -> dataset -> DataFrame
+python examples/maccor/roundtrip_maccor_json.py  # dataset -> compact JSON -> dataset
 ```
 
 ### Working with OpenSemanticLab (OSL)
@@ -444,23 +444,21 @@ Both upload scripts are a dry run unless `--store` is passed.
 
 ```bash
 pip install -e ".[osl,maccor]"   # maccor only needed by the large-dataset script
-cd examples
-
 # the example tree: three cells, three procedures, six tests
-python upload_example_data_OSL.py
-python upload_example_data_OSL.py --store
+python examples/osl/upload_example_data_OSL.py
+python examples/osl/upload_example_data_OSL.py --store
 
 # a large dataset, rows stored out-of-band in a WikiFile
-python upload_large_dataset_OSL.py --dataset cell_c
-python upload_large_dataset_OSL.py --dataset cell_d --store
+python examples/osl/upload_large_dataset_OSL.py --dataset cell_c
+python examples/osl/upload_large_dataset_OSL.py --dataset cell_d --store
 
 # the same as CSV: the pint-pandas frame with its unit header row. After
 # --store the rows are materialized back from the file as a round-trip check.
-python upload_large_dataset_OSL.py --dataset cell_d --format csv --store
+python examples/osl/upload_large_dataset_OSL.py --dataset cell_d --format csv --store
 
 # the semantic searches the dashboard backend runs
-python osl_queries.py                 # list the available queries
-python osl_queries.py --query datasets
+python examples/osl/osl_queries.py                 # list the available queries
+python examples/osl/osl_queries.py --query datasets
 ```
 
 Both accept `--domain` and `--cred-filepath`; `--dataset` takes `cell_c`,
