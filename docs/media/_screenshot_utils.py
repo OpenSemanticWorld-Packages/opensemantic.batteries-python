@@ -127,12 +127,133 @@ def real_click_selector(page, selector):
 
 
 def open_sidebar(page):
-    """Reveal Panelini's left sidebar (it defaults to collapsed).
+    """Make sure Panelini's left sidebar is open (idempotent).
 
-    ``sidebar_visible`` defaults to False, so the cell / procedure trees start
-    hidden; click the navbar toggle so they are visible in the recording.
+    ``sidebar_visible`` is True, so the sidebar normally starts open and a toggle
+    click would close it. The toggle is only clicked when the sidebar is
+    closed, i.e. the first sidebar card has no visible area. Returns True if
+    the sidebar is open afterwards.
     """
-    return real_click_selector(page, ".left-navbar-button")
+    if _sidebar_is_open(page):
+        return True
+    real_click_selector(page, ".left-navbar-button")
+    page.wait_for_timeout(800)
+    return _sidebar_is_open(page)
+
+
+def _sidebar_is_open(page):
+    return page.evaluate(
+        _CARD_JS
+        + """() => {
+            for (const c of allCards()) {
+                if (c.classList.contains('sidebar-object')) {
+                    const b = c.getBoundingClientRect();
+                    return b.width > 20 && b.height > 0
+                        && b.right > 0 && b.left < window.innerWidth;
+                }
+            }
+            return false;
+        }"""
+    )
+
+
+def expand_tree_nodes(page, rounds=3, settle=1200):
+    """Expand every collapsed Wunderbaum node (lazy trees load children on expand)."""
+    for _ in range(rounds):
+        page.evaluate(
+            """() => {
+                function rec(r) {
+                    for (const el of r.querySelectorAll('*')) {
+                        if (el.shadowRoot) {
+                            for (const x of el.shadowRoot.querySelectorAll(
+                                    'i.wb-expander.wb-collapsed')) x.click();
+                            rec(el.shadowRoot);
+                        }
+                    }
+                }
+                rec(document);
+            }"""
+        )
+        page.wait_for_timeout(settle)
+
+
+# -- Cards (title lives in the card header inside a shadow root) -------------
+
+_CARD_JS = """
+function* allEls(r){
+    for (const el of r.querySelectorAll('*')){
+        yield el;
+        if (el.shadowRoot) yield* allEls(el.shadowRoot);
+    }
+}
+function cardTitle(card){
+    const hd = (card.shadowRoot || card).querySelector('.card-header');
+    if (!hd) return null;
+    let t = '';
+    for (const e of allEls(hd)) {
+        if (['STYLE', 'LINK', 'svg', 'path'].includes(e.tagName)) continue;
+        if (e.children.length === 0 && !e.shadowRoot) {
+            const x = (e.textContent || '').trim();
+            if (x && !x.startsWith(':host')) t += x;
+        }
+    }
+    return t;
+}
+function* allCards(){
+    for (const el of allEls(document))
+        if (el.classList && el.classList.contains('card')
+            && /layout-Card/.test(el.className)) yield el;
+}
+function findCard(t){
+    for (const c of allCards()) if (cardTitle(c) === t) return c;
+    return null;
+}
+"""
+
+
+def _set_card(page, title, expanded, settle):
+    info = page.evaluate(
+        _CARD_JS
+        + """(t) => {
+            const c = findCard(t);
+            if (!c) return null;
+            const hd = c.shadowRoot.querySelector('.card-header');
+            hd.scrollIntoView({block: 'nearest'});
+            const hr = hd.getBoundingClientRect();
+            const b = c.getBoundingClientRect();
+            return {collapsed: b.height < hr.height + 4,
+                    x: hr.x + hr.width / 2, y: hr.y + hr.height / 2};
+        }""",
+        title,
+    )
+    if info is None:
+        return False
+    if info["collapsed"] == expanded:
+        page.mouse.click(info["x"], info["y"])
+        page.wait_for_timeout(settle)
+    return True
+
+
+def expand_card(page, title, settle=2500):
+    """Expand the card titled ``title`` (click its header only if collapsed).
+
+    A card counts as collapsed when its height is about the header height.
+    The header is scrolled into view first (the sidebar can be taller than the
+    viewport). Uses a real mouse click. Returns False if no card has that
+    title, else True.
+    """
+    return _set_card(page, title, True, settle)
+
+
+def collapse_card(page, title, settle=1500):
+    """Collapse the card titled ``title`` (click its header only if expanded)."""
+    return _set_card(page, title, False, settle)
+
+
+def click_button(page, name, settle=2500):
+    """Click the visible button called ``name`` (e.g. "Procedure batches")."""
+    page.get_by_role("button", name=name).click()
+    page.wait_for_timeout(settle)
 
 
 # -- Axes & Units grid (anonymous checkboxes + unit selects) -----------------

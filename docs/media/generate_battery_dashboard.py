@@ -5,12 +5,14 @@ three procedures, six tests) and drives the UI with Playwright, capturing frames
 stitched into an animated GIF.
 
 The story the GIF tells (a fuller walk-through than the Maccor demo):
-  1. Empty dashboard; open the left sidebar to reveal the category trees.
+  1. Empty dashboard; the left sidebar is open on start (category trees,
+     instances) and the plot cards are collapsed. Expand "Time Series".
   2. Check only the round cells (the ``CylindricalCell`` subtree -> Cell A, B).
   3. Check the whole procedure tree (all procedures) -> every matching test
      plots as its own trace.
   4. Uncheck the "Aging (B)" run in the Instances card -> that trace drops.
-  5. Put ``current`` on the y2 (right) axis in Axes & Units -> a second axis
+  5. Expand "Time Series - Axes & Units" and put ``current`` on the y2
+     (right) axis -> a second axis
      appears with the current traces.
   6. Switch the current unit from A to mA -> the right axis rescales.
   7. Re-select: only the Prismatic cell (Cell C) and only the Formation Test
@@ -33,6 +35,7 @@ import imageio.v3 as iio
 from _screenshot_utils import (
     capture,
     click_tree_checkbox,
+    expand_card,
     open_sidebar,
     set_axis,
     set_unit,
@@ -75,11 +78,13 @@ def main():
             page = p.chromium.launch(headless=True).new_page(viewport=VIEWPORT)
             page.goto(URL, timeout=120000, wait_until="domcontentloaded")
             page.wait_for_timeout(6000)
-            capture(page, frames, 800)  # empty dashboard, sidebar collapsed
+            capture(page, frames, 800)  # empty dashboard, sidebar open on start
 
-            print("Open the sidebar...")
-            print("  toggle:", open_sidebar(page))
-            capture(page, frames, 1500)  # trees revealed
+            print("Make sure the sidebar is open...")
+            print("  sidebar:", open_sidebar(page))
+            print("Expand the Time Series plot card...")
+            print("  card:", expand_card(page, "Time Series"))
+            capture(page, frames, 1000)  # trees visible, empty plot card
 
             print("Select round (cylindrical) cells...")
             print(
@@ -96,6 +101,8 @@ def main():
             print("  uncheck:", toggle_row_checkbox(page, "Aging (B)"))
             capture(page, frames, 2500)  # that trace drops
 
+            print("Expand Time Series - Axes & Units...")
+            print("  card:", expand_card(page, "Time Series - Axes & Units"))
             print("Put current on the y2 axis...")
             print("  current y2:", set_axis(page, "current", "y2"))
             capture(page, frames, 2500)  # second (right) axis appears
