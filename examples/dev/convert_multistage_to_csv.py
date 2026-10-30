@@ -13,7 +13,7 @@ applied to the columns instead of the rows. A cell that fails is logged, gets no
 CSV, and is listed at the end. Cells in ``SKIPPED_CELLS`` are not converted.
 
 Also writes ``index.json`` with ``{cell, c_rate, procedure, rows, file}`` per
-cell. Run from the ``examples`` directory::
+cell. Run from the ``examples/dev`` directory::
 
     python convert_multistage_to_csv.py
     python convert_multistage_to_csv.py --cells 4-3 1-6

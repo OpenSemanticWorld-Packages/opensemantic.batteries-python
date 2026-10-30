@@ -27,7 +27,8 @@ back offline and the time per phase and the peak memory are printed. With
 (rows externalized to a WikiFile as in ``upload_large_dataset_OSL.py``), test,
 and the rows are read back with ``materialize_data``.
 
-Run from the ``examples`` directory, after filling in ``accounts.pwd.yaml``::
+Run from the ``examples/dev`` directory, after filling in
+``examples/accounts.pwd.yaml``::
 
     python upload_multistage_dataset_OSL.py --cell 4-3
     python upload_multistage_dataset_OSL.py --cell 4-3 --max-cycles 20
@@ -76,7 +77,7 @@ from opensemantic.batteries.v1 import (
 from opensemantic.core.v1 import Description, Label
 
 WIKI_DOMAIN = "wiki-dev.open-semantic-lab.org"
-CRED_FILEPATH = Path("accounts.pwd.yaml")
+CRED_FILEPATH = Path(__file__).resolve().parent.parent / "accounts.pwd.yaml"
 DATA_DIR = Path(r"C:\Users\feiler\Desktop\Example_Data_For_BatterieDigital")
 
 AGING_PROCEDURE = "Category:OSW1b877eab05e442999835f2f595d1d1e7"

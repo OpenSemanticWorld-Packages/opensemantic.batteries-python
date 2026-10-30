@@ -8,7 +8,7 @@ bytes, then ``from_df`` of the dataset class. The rows of a cell are loaded the
 first time a selection needs them and then kept, without a limit.
 
 Run with:
-    panel serve examples/battery_dashboard_multistage.py
+    panel serve examples/dev/battery_dashboard_multistage.py
 
 The folder with ``index.json`` and the CSV files is ``CSV_DIR``; set the
 environment variable ``MULTISTAGE_CSV_DIR`` to read another folder.
