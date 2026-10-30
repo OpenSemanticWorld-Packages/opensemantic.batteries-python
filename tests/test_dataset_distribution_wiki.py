@@ -10,7 +10,7 @@ back through the same controller methods the dashboard uses.
 Writes to the wiki, so it only runs when ``TEST_OSL_DOMAIN`` is set::
 
     TEST_OSL_DOMAIN=wiki-dev.open-semantic-lab.org \\
-    TEST_OSL_CRED_FILEPATH=../../scripts/accounts.pwd.yaml \\
+    TEST_OSL_CRED_FILEPATH=examples/accounts.pwd.yaml \\
     pytest tests/test_dataset_distribution_wiki.py
 
 It self-skips when the credentials or the connection are unavailable, and

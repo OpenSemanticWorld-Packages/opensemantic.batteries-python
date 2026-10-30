@@ -7,7 +7,7 @@
 > `world.opensemantic.batteries`, plus a typed, unit-aware battery cycling data
 > model with cycler-file importers.
 
-The package has two parts:
+The package has three parts:
 
 1. **Metadata models** - auto-generated Pydantic models (v1 and v2) for the
    battery domain: cells, modules and packs, cell formats and chemistries,
@@ -17,6 +17,12 @@ The package has two parts:
    `CyclingDataRow` and `CyclingDatasetController`, which adds the pandas / pint
    round-trip and the file distribution handling, plus importers for real cycler
    export files (Maccor).
+3. **Dashboard** (`opensemantic.batteries.view`) - a Panel / Bokeh dashboard
+   that selects cells and procedures and plots time series, per-cycle
+   capacities and coulomb efficiencies, and batch means with error bars. See
+   [Dashboard (view)](#dashboard-view).
+
+![Battery dashboard on the Maccor example data](docs/media/battery_dashboard_maccor.gif)
 
 Builds on
 [opensemantic.core](https://github.com/OpenSemanticWorld-Packages/opensemantic.core-python),
@@ -115,10 +121,14 @@ flowchart TB
     analyze -- "🔒 gated File request" --> localB
 ```
 
-Stage status today: **parse** and **unify** and the read-side
-**browse → query → download → plot** path are implemented; the **upload** step
-(serialising the dataset and writing it to the wiki) is not yet wired in the
-library — the viewer currently reads pages that were uploaded out of band.
+Stage status today: **parse**, **unify**, **upload** and the read-side
+**browse → query → download → plot** path all work. The upload is done by the
+example scripts in `examples/osl/` (`upload_example_data_OSL.py` and
+`upload_large_dataset_OSL.py`), not by a library function. Large datasets store
+their rows in an uploaded `WikiFile` (JSON or CSV) that the dataset references
+through its distributions, instead of inline in `Dataset.data`. With the
+current generated models, uploaded tests have no procedure link; see the known
+issue under [Linking a test to its procedure](#linking-a-test-to-its-procedure).
 
 ## Installation
 
@@ -126,8 +136,26 @@ library — the viewer currently reads pages that were uploaded out of band.
 pip install opensemantic.batteries              # metadata models only
 pip install opensemantic.batteries[maccor]      # + Maccor cycler-file import
 pip install opensemantic.batteries[controller]  # + controller extras (via opensemantic.lab)
-pip install opensemantic.batteries[view]        # + dashboard view extras (via opensemantic.lab)
+pip install opensemantic.batteries[view]        # + dashboard (opensemantic.lab[view], opensemantic.base[view])
+pip install opensemantic.batteries[osl]         # + live OSL wiki backend (view and osw)
+pip install opensemantic.batteries[docs]        # + demo media generation (playwright, imageio)
+pip install opensemantic.batteries[testing]     # + test tools (pytest, pytest-cov, maccor)
 ```
+
+Extras from `setup.cfg`:
+
+- `maccor`: `maccor-utility`, needed by `read_maccor`.
+- `controller`: `opensemantic.lab[controller]`.
+- `view`: `opensemantic.lab[view]` and `opensemantic.base[view]`, needed by the
+  dashboard.
+- `osl`: `view` plus `osw`, needed to connect the dashboard to a live wiki.
+- `docs`: `playwright`, `imageio`, `view` and `maccor`. Run
+  `playwright install chromium` once after the installation.
+- `testing`: `setuptools`, `pytest`, `pytest-cov` and `maccor`.
+
+Two dependencies are temporary git pins: `opensemantic.base` is installed from
+the `main` branch of its repository, and `maccor-utility` from a pinned commit.
+See [Pending upstream fixes](#pending-upstream-fixes).
 
 ## Metadata models
 
@@ -220,6 +248,17 @@ test = ElectrochemicalTest(
 single `.protocol` object is still accepted as a legacy fallback. `output` is a
 **list** of datasets, and the dashboard plots the first one's `.data`.
 
+> **Known issue:** the currently generated `TestProcedureItem` has only
+> `test_procedure_subcategory`. The fields `test_procedure_instance` and
+> `test_procedure_instance_property` are missing, and Pydantic drops them
+> without an error. Until the schema is fixed (see
+> [Pending upstream fixes](#pending-upstream-fixes)), the code above creates a
+> test without a procedure link. As a result, the synthetic example
+> (`examples/synthetic/battery_dashboard.py`) matches no data, and tests
+> uploaded with the `examples/osl` scripts have no procedure link. Data already
+> in the wiki is not affected, and the lazy and Maccor dashboards do not use
+> this field.
+
 ## Pydantic layers (v1 and v2)
 
 Every generated model exists twice:
@@ -256,6 +295,14 @@ name stays unit-agnostic and the unit lives in the value:
 | `step_time` | Time | second | optional |
 | `capacity` | Electric charge | coulomb | optional |
 | `energy` | Energy | joule | optional |
+| `step_type` | `StepType` enum | none | optional, only on `StepTypedCyclingDataRow` |
+
+`step_type` is the operational mode of the step as reported by the cycler. It is
+not part of the generated schema yet. `CyclingDatasetController` therefore uses
+the local subclass `StepTypedCyclingDataRow`, which adds the field. The values
+of `StepType` are `CC_CHG`, `CC_DCH`, `CV_CHG`, `CV_DCH`, `CCCV_CHG`,
+`CCCV_DCH`, `REST`, `OCV`, `EIS` and `OTHER`. In the time-series plot,
+`step_type` is a categorical axis (no unit, not usable as x).
 
 > **Note.** `ElectrochemicalCyclingDataset` / `CyclingDataRow` are OSW-generated
 > models from the schema package. Work with them through
@@ -308,6 +355,18 @@ len(ds.data)
 Supported formats: `maccor_export1`, `maccor_export2`, `mims_client1`,
 `mims_client2`, `mims_server2`. To add another cycler, subclass `CyclerImporter`
 and implement `to_dataframe()`.
+
+The importer sets `step_type` from the Maccor `Mode` column. The code is
+stripped and converted to upper case first (`MACCOR_MODE_TO_STEP_TYPE` in
+`_importers/maccor.py`):
+
+| `Mode` | `step_type` |
+|---|---|
+| `R` | `REST` |
+| `C` | `CCCV_CHG` |
+| `D` | `CC_DCH` |
+| any other non-empty code | `OTHER` |
+| empty | none |
 
 ### DataFrames (pandas + pint)
 
@@ -393,6 +452,27 @@ two datasets have a value for the cycle. Its controls are in the
 sidebar card **Batch Series - Axes & Units**, the same grid as for the
 cycle series.
 
+The cycle table behind both plots is built by `cycle_summary` in
+`_cycle_summary.py`, with these rules:
+
+- A step is a run of consecutive rows with the same `cycle_count`,
+  `step_count` and `step_type`.
+- The charge capacity of a cycle is the sum of the capacity increases of its
+  charge steps (`CC_CHG`, `CV_CHG`, `CCCV_CHG`). The discharge capacity is the
+  same sum over the discharge steps (`CC_DCH`, `CV_DCH`, `CCCV_DCH`).
+- The increase of a step is its last capacity minus a baseline. The baseline
+  is the capacity of the row before the step if the step continues that counter
+  (its first value is not below it), else zero (the cycler reset the counter).
+- The discharge coulomb efficiency is discharge capacity divided by charge
+  capacity, and the charge coulomb efficiency is the inverse. Each is `None`
+  unless both capacities exist and the denominator is greater than zero.
+- Without `step_type`, the cycle and batch plots show a placeholder that names
+  the number of datasets without it.
+
+In the batch plot, the value per cycle is the mean over the members of the
+batch, and the error bar is the sample standard deviation (n - 1). A cycle with
+one member has no error bar.
+
 ```bash
 pip install opensemantic.batteries[view]
 panel serve examples/synthetic/battery_dashboard.py --dev
@@ -410,10 +490,28 @@ the unit-conversion design, and the v1/v2 layer pitfall. Runnable examples:
 
 ## Examples
 
-Commands run from the repository root unless noted. The OSL scripts default to
-`examples/accounts.pwd.yaml`, so they run from any directory
-(see [`examples/accounts.pwd.yaml.template`](examples/accounts.pwd.yaml.template)),
-or take `--cred-filepath`.
+Commands run from the repository root unless noted.
+
+### Examples layout
+
+| folder | contents |
+|---|---|
+| `examples/synthetic` | Synthetic data in memory, no credentials needed |
+| `examples/maccor` | Real Maccor files from `tests/data`, no credentials needed |
+| `examples/osl` | Scripts that connect to an OSL wiki, need `examples/accounts.pwd.yaml` |
+| `examples/dev` | Personal scripts with local paths, not supported, see [`examples/dev/README.md`](examples/dev/README.md) |
+
+### Credentials and wiki
+
+`examples/accounts.pwd.yaml` is ignored by Git. Create it by copying
+[`examples/accounts.pwd.yaml.template`](examples/accounts.pwd.yaml.template) and
+fill in the user name and password. The OSL scripts read this file by default,
+so they run from any directory, and they connect to the development wiki
+`wiki-dev.open-semantic-lab.org`. The three command-line scripts
+(`upload_example_data_OSL.py`, `upload_large_dataset_OSL.py` and
+`osl_queries.py`) accept `--domain` and `--cred-filepath` to override both.
+`battery_dashboard_OSL.py` takes no arguments, so change its connection in the
+script.
 
 ### Dashboards
 
@@ -467,14 +565,39 @@ Both accept `--domain` and `--cred-filepath`; `--dataset` takes `cell_c`,
 `cell_instances`, `procedure_subcategories`, `procedure_instances`,
 `tests_of_cell`, `tests_of_cell_and_procedure` or `datasets`.
 
+### Logging
+
+The view and the OSL backend log to the logger
+`opensemantic.batteries.view`. `LazyBatteryDataView(show_log=True)` shows a log
+card with the recent records and a status line above the plots.
+`examples/osl/battery_dashboard_OSL.py` sets the level from the environment
+variable `OSB_VIEW_LOG` (default `INFO`). With `DEBUG`, the log also contains the
+query texts.
+
+## Development
+
+```bash
+pip install -e ".[testing,view,osl,maccor]"
+pre-commit install                # run the hooks on every commit
+pre-commit run --all-files        # run the hooks once on all files
+```
+
 ### Tests
 
 ```bash
-pytest                      # or: tox
+pytest                      # or: tox -e test (bare tox runs the same env)
 
 # the OSL round-trip, opt-in because it writes to OSL
 TEST_OSL_DOMAIN=wiki-dev.open-semantic-lab.org   TEST_OSL_CRED_FILEPATH=examples/accounts.pwd.yaml   pytest tests/test_dataset_distribution_wiki.py
 ```
+
+Some tests skip when an optional package is missing: the view tests need
+`panel` and `panelini` (extra `view`), the OSL backend tests need `panel`, the
+wiki round-trip test needs `osw` (extra `osl`), and the Maccor import tests need
+`maccor_utility` (extra `maccor`). `tests/test_dataset_distribution_wiki.py`
+writes to a wiki and skips unless `TEST_OSL_DOMAIN` is set. `TEST_OSL_CRED_FILEPATH` is optional. It is
+passed to the connection as the credentials file, and a failed connection also
+skips the test.
 
 ## Pending upstream fixes
 
@@ -496,6 +619,25 @@ TEST_OSL_DOMAIN=wiki-dev.open-semantic-lab.org   TEST_OSL_CRED_FILEPATH=examples
   with `charge_capacity`, `discharge_capacity`, `charge_coulomb_efficiency` and
   `discharge_coulomb_efficiency`), regenerate the models, then remove the local
   module.
+- **Restore the procedure link in `TestProcedureItem`**: the regenerated model
+  has only `test_procedure_subcategory`. Add `test_procedure_instance` (the
+  procedure's OSW IRI) and `test_procedure_instance_property` back to the
+  `world.opensemantic.batteries` schema and regenerate. Until then the
+  non-lazy `BatteryDataView`, `examples/synthetic/battery_dashboard.py` and the
+  `examples/osl` upload scripts lose the test-to-procedure link (see
+  [Linking a test to its procedure](#linking-a-test-to-its-procedure)), and
+  `docs/media/battery_dashboard.png` cannot be regenerated with data.
+- **Release `opensemantic.base`**: `setup.cfg` installs it from the `main` branch
+  of its repository, because `_cycling.py` needs the dataset controller that is
+  merged but not released. Replace the git URL with `opensemantic.base>=0.43.0`
+  or the first released version that contains it.
+- **Release the `maccor-utility` fix**: `setup.cfg` pins `maccor-utility` to a git
+  commit that contains the `TestTime` / `StepTime` duration-parsing fix (pull
+  request OpenBattTools/maccor-utility#4). Repin to a released version once the
+  pull request is merged and published.
+
+Both git pins block a release to PyPI, because PyPI rejects dependencies that
+are direct URLs.
 
 ## Note
 

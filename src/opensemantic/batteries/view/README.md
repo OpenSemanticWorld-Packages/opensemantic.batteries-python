@@ -20,7 +20,7 @@ pip install -e ".[view]"   # pulls opensemantic.base[view] + opensemantic.lab[vi
 | `_backend.py` | `BatteryDataBackend` (ABC), `TreeNode`, `Dataset` — the swappable-backend seam |
 | `_osl_backend.py` | `OSLBatteryBackend`, `connect_osw` — live-OSL-wiki backend |
 | `_oold_tree.py` | `OOLDTreeBuilder`, `PythonSource`, `LazySource`, `RelationSpec`, `has_type`, `field_rel` |
-| `_battery_utils.py` | `build_oold_tree_source`, `get_checked_instance_ids`, `set_selected_instances`, `inject_axis_children` |
+| `_battery_utils.py` | `build_oold_tree_source`, `get_checked_instance_ids`, `inject_axis_children`; `set_selected_instances` is internal (not exported) |
 
 All public names are re-exported from `opensemantic.batteries.view`:
 
@@ -30,6 +30,7 @@ from opensemantic.batteries.view import (
     LazyBatteryDataView, BatteryDataBackend, TreeNode, Dataset,
     OSLBatteryBackend, connect_osw,
     OOLDTreeBuilder, PythonSource, LazySource, RelationSpec, has_type, field_rel,
+    build_oold_tree_source, get_checked_instance_ids, inject_axis_children,
 )
 ```
 
@@ -60,11 +61,14 @@ from opensemantic.batteries.view import (
     LazyBatteryDataView, OSLBatteryBackend, connect_osw,
 )
 backend = OSLBatteryBackend(
-    osw_obj=connect_osw("accounts.pwd.yaml"),
+    osw_obj=connect_osw("accounts.pwd.yaml"),  # path relative to the working directory
     row_class=CyclingDataRow,
 )
 LazyBatteryDataView(backend=backend).servable()
 ```
+
+The credentials path is relative to the working directory. The examples use
+`examples/accounts.pwd.yaml` (see the repository README).
 
 After the dataset titles are known, `OSLBatteryBackend.datasets` runs one
 read-only `ask` query per chunk of 50 titles (`[[HasOutput::t1||t2...]]` with
@@ -135,6 +139,8 @@ children, which the next `source` echo expands, serialising the lazy loads.
 ## Quick start
 
 A runnable version is in [`examples/synthetic/battery_dashboard.py`](../../../../examples/synthetic/battery_dashboard.py).
+The file lives in `examples/synthetic/`, and the `battery_example_data` import
+works because `panel serve` adds the script directory to `sys.path`.
 
 ```python
 import panel as pn
@@ -242,7 +248,7 @@ shared matching logic lives in `_matching_tests()`, used by both the card and
 
 The sidebar cards (`sidebar_cards`) are, top to bottom: **Cells**,
 **Procedures**, **Instances**, **Time Series - Axes & Units**, **Cycle Series -
-Axes & Units**, **Batches**, **Batch Series - Axes & Units**, **Configuration**. The Cell and
+Axes & Units**, **Batches**, **Batch Series - Axes & Units**, **Config**. The Cell and
 Procedure tree cards have no height or scrollbar of their own. Each tree widget
 gets a stylesheet (`_tree_stylesheets`) that fixes the height of its inner
 `.tree-container` (`_TREE_CARD_HEIGHT`, `_INSTANCES_CARD_HEIGHT` for the
@@ -252,7 +258,7 @@ collapsed card shrinks to its header.
 Initial state: the sidebar is open (`sidebar_visible=True`). Cells, Procedures
 and Instances are expanded. **Time Series - Axes & Units**, **Cycle Series -
 Axes & Units**, **Batches**, **Batch Series - Axes & Units** and
-**Configuration** are collapsed, as are the **Time Series**, **Cycle Series**
+**Config** are collapsed, as are the **Time Series**, **Cycle Series**
 and **Batch Series** plot cards in the main area. The log card is unchanged. The axis / unit grid is its
 own **Time Series - Axes & Units** card (`_build_axis_card`, wiring
 `_axis_checkboxes`) placed below the Instances card, not nested under the
@@ -381,8 +387,9 @@ Keep example/dashboard values and their unit enums in the **same** layer (v1).
 ## Editing note
 
 The shared pieces (`BaseDataView`, `_numeric`, `_channel_utils`,
-`get_available_units`) live in **`opensemantic.base` at
-`.../opensemantic.base-python/src/opensemantic/base/view/`** and are installed
-**editable** into this venv — so changes there are live here. If you touch
-conversion or channel logic, that is the file to edit, and it affects
-`DataToolView` and `ProcessObjectView` too.
+`get_available_units`) live in `opensemantic.base`, in
+`src/opensemantic/base/view/` of the opensemantic.base-python repository. If you
+change them, the change also affects `DataToolView` and `ProcessObjectView`.
+If you work on `opensemantic.base` at the same time, install it editable with
+`pip install -e <path to opensemantic.base-python>`, so that your changes are
+used here.

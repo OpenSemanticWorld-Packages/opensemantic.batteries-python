@@ -16,7 +16,8 @@ Sidebar layout (top to bottom):
 Time Series - Axes & Units grid
   rows = data fields (test_time, voltage, current, ...)
   cols = x | y1 | y2 | Unit
-  Per-column radio: exactly one field per axis at a time.
+  Per-column radio: at most one field per axis; ticking a field replaces the
+  previous one on that axis.
   Unit column: dropdown for each field, auto-detected from opensemantic type.
   A field typed as an Enum (e.g. ``step_type``) is categorical: no unit, it
   cannot be x, and as y1 / y2 it is drawn as a step line on a category axis.
