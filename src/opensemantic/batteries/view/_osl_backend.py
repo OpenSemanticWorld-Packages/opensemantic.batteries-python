@@ -509,14 +509,25 @@ class OSLBatteryBackend(BatteryDataBackend):
         A distribution that names only a URL would otherwise be read with the
         generic remote controller, which fetches it with plain urllib - on a
         login-required wiki that returns the login page, not the rows.
+
+        A distribution written by the current ``externalize_data`` also names
+        its file. That reference loads as a plain ``WikiFile`` entity, for
+        which no file controller is registered, so it is cast to the wiki
+        controller as well.
         """
         if self._osw is None:
             return distribution
+        from osw.controller.file.wiki import WikiFileController
+
         try:
             # a reference resolves on access, so a dangling one raises here
             # rather than answering None - the URL below is then the way in
-            if getattr(distribution, "file", None) is not None:
-                return distribution
+            file = getattr(distribution, "file", None)
+            if file is not None:
+                if callable(getattr(file, "get", None)):
+                    return distribution  # already a file controller
+                wiki_file = file.cast(WikiFileController, osw=self._osw)
+                return distribution.copy(update={"file": wiki_file})
         except Exception as exc:  # noqa: BLE001 - fall through to the URL
             _log.warning("distribution file unreadable: %s", exc)
         url = getattr(distribution, "download_url", None) or getattr(
@@ -524,7 +535,6 @@ class OSLBatteryBackend(BatteryDataBackend):
         )
         if not url or "File:" not in url:
             return distribution
-        from osw.controller.file.wiki import WikiFileController
 
         # the page title, without a query string or fragment the URL may carry
         title = "File:" + re.split(r"[?#&]", url.split("File:")[-1])[0]
