@@ -243,8 +243,17 @@ shared matching logic lives in `_matching_tests()`, used by both the card and
 The sidebar cards (`sidebar_cards`) are, top to bottom: **Cells**,
 **Procedures**, **Instances**, **Time Series - Axes & Units**, **Cycle Series -
 Axes & Units**, **Batches**, **Batch Series - Axes & Units**, **Configuration**. The Cell and
-Procedure tree cards share a fixed height (`_TREE_CARD_HEIGHT`) and scroll, so
-they sit level regardless of how deep either tree is. The axis / unit grid is its
+Procedure tree cards have no height or scrollbar of their own. Each tree widget
+gets a stylesheet (`_tree_stylesheets`) that fixes the height of its inner
+`.tree-container` (`_TREE_CARD_HEIGHT`, `_INSTANCES_CARD_HEIGHT` for the
+Instances tree), so the tree scrolls internally with a single scrollbar and a
+collapsed card shrinks to its header.
+
+Initial state: the sidebar is open (`sidebar_visible=True`). Cells, Procedures
+and Instances are expanded. **Time Series - Axes & Units**, **Cycle Series -
+Axes & Units**, **Batches**, **Batch Series - Axes & Units** and
+**Configuration** are collapsed, as are the **Time Series**, **Cycle Series**
+and **Batch Series** plot cards in the main area. The log card is unchanged. The axis / unit grid is its
 own **Time Series - Axes & Units** card (`_build_axis_card`, wiring
 `_axis_checkboxes`) placed below the Instances card, not nested under the
 Procedure tree. The **Cycle Series - Axes & Units** card (`_build_cycle_card`)
@@ -264,7 +273,7 @@ rules:
   on the axis, and a unit change applies to all fields on that axis. The
   widgets are updated under the grid's `_updating` flag, so the watchers do not
   recurse. A unit change of a field on no axis is only stored.
-- Defaults: both capacities on y1 (coulomb), y2 empty. Efficiencies are shown
+- Defaults: only `discharge_capacity` on y1 (coulomb), y2 empty. Efficiencies are shown
   in percent by default.
 
 The **Batch Series - Axes & Units** card holds a second `_CycleGrid`

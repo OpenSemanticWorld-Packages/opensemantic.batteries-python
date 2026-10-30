@@ -2,8 +2,8 @@
 
 Sidebar layout (top to bottom):
   - Cell card:      cell tree (SubClassOf + HasType hierarchy, hierarchical
-                    checkbox); fixed height, scrolls
-  - Procedure card: procedure tree; same fixed height as the cell card, scrolls
+                    checkbox); the tree scrolls inside a fixed-height container
+  - Procedure card: procedure tree; same tree height as the cell card
   - Instances card: live list of test runs matching the cell+procedure
                     selection; per-instance checkbox toggles whether it is plotted
   - Time Series - Axes & Units card: the axis/unit grid (below Instances)
@@ -156,7 +156,7 @@ class _CycleGrid:
             )
         # Fields on each axis, in tick order; one unit per axis
         self.axis_fields: Dict[str, List[str]] = {
-            "y1": ["charge_capacity", "discharge_capacity"],
+            "y1": ["discharge_capacity"],
             "y2": [],
         }
         self.checkboxes: Dict[Tuple[str, str], pn.widgets.Checkbox] = {}
@@ -315,12 +315,12 @@ class BatteryDataView(BaseDataView):
         Auto-detected from the first test's row class if omitted.
     """
 
-    # Fixed height for the Cell and Procedure tree cards, so they sit at the
-    # same height in the sidebar and their trees scroll rather than resize.
+    # Fixed tree-container height for the Cell and Procedure trees, so they sit
+    # at the same height in the sidebar and scroll rather than resize.
     _TREE_CARD_HEIGHT = 260
-    # The Instances card holds a flat one-level tree, so it needs less room than
-    # a full tree card — but not too little; ~3/4 height, scrolling when there
-    # are many matches.
+    # The Instances tree is flat and one level deep, so its container needs less
+    # room than a full tree: about 3/4 height, scrolling when there are many
+    # matches.
     _INSTANCES_CARD_HEIGHT = _TREE_CARD_HEIGHT * 3 // 4
 
     def __init__(
@@ -465,6 +465,25 @@ class BatteryDataView(BaseDataView):
 
     # -- Cell tree -----------------------------------------------------------
 
+    @staticmethod
+    def _tree_stylesheets(height: int) -> List[str]:
+        """Stylesheet that fixes the inner tree container height in pixels.
+
+        The tree scrolls inside ``.tree-container``, so the enclosing card needs
+        no fixed height and no scrollbar of its own and collapses to its header.
+        Wunderbaum gives the container an inline width of 800 px and forces
+        ``overflow-y: scroll`` on every ``.wunderbaum`` element. The rules fill
+        the available width, hide the horizontal overflow and leave the vertical
+        scrollbar to the container only when the tree overflows.
+        """
+        return [
+            ".wunderbaum-wrapper { overflow: hidden !important; }\n"
+            ".wunderbaum:not(.tree-container) { overflow-y: visible !important; }\n"
+            ".tree-container.wunderbaum { "
+            f"width: 100% !important; height: {height}px !important; "
+            "overflow-x: hidden !important; overflow-y: auto !important; }"
+        ]
+
     def _make_tree(self, source: List[Dict], title: str) -> Wunderbaum:
         """Build a checkbox Wunderbaum over *source* wired to ``_on_tree_change``.
 
@@ -474,6 +493,7 @@ class BatteryDataView(BaseDataView):
             source=source,
             columns=[{"id": "*", "title": title, "width": "220px"}],
             options={"checkbox": True, "selectMode": "hier"},
+            stylesheets=self._tree_stylesheets(self._TREE_CARD_HEIGHT),
         )
         tree.param.watch(self._on_tree_change, ["source"])
         return tree
@@ -485,8 +505,6 @@ class BatteryDataView(BaseDataView):
             self._cell_tree,
             title="Cells",
             collapsed=False,
-            height=self._TREE_CARD_HEIGHT,
-            scroll=True,
         )
 
     # -- Procedure card (tree only) ------------------------------------------
@@ -500,8 +518,6 @@ class BatteryDataView(BaseDataView):
             self._proc_tree,
             title="Procedures",
             collapsed=False,
-            height=self._TREE_CARD_HEIGHT,
-            scroll=True,
         )
 
     # -- Axes & units card ---------------------------------------------------
@@ -515,7 +531,7 @@ class BatteryDataView(BaseDataView):
         self._axis_card = pn.Card(
             self._build_axis_grid(),
             title="Time Series - Axes & Units",
-            collapsed=False,
+            collapsed=True,
         )
 
     # -- Cycle series card ---------------------------------------------------
@@ -532,7 +548,7 @@ class BatteryDataView(BaseDataView):
             self._cycle_grid.panel,
             title="Cycle Series - Axes & Units",
             collapsible=True,
-            collapsed=False,
+            collapsed=True,
         )
         self._cycle_col = pn.Column(
             pn.pane.Markdown("_No cycle data._", margin=(10, 6)),
@@ -542,7 +558,7 @@ class BatteryDataView(BaseDataView):
             self._cycle_col,
             title="Cycle Series",
             collapsible=True,
-            collapsed=False,
+            collapsed=True,
             sizing_mode="stretch_width",
         )
 
@@ -561,7 +577,7 @@ class BatteryDataView(BaseDataView):
             self._batch_grid.panel,
             title="Batch Series - Axes & Units",
             collapsible=True,
-            collapsed=False,
+            collapsed=True,
         )
 
         self._batch_cell_button = pn.widgets.Button(name="Cell batches", width=110)
@@ -582,7 +598,7 @@ class BatteryDataView(BaseDataView):
             self._batch_rows,
             title="Batches",
             collapsible=True,
-            collapsed=False,
+            collapsed=True,
         )
         self._batch_col = pn.Column(
             pn.pane.Markdown("_No batch data._", margin=(10, 6)),
@@ -592,7 +608,7 @@ class BatteryDataView(BaseDataView):
             self._batch_col,
             title="Batch Series",
             collapsible=True,
-            collapsed=False,
+            collapsed=True,
             sizing_mode="stretch_width",
         )
 
@@ -792,8 +808,6 @@ class BatteryDataView(BaseDataView):
             pn.pane.Markdown("_Select a cell and a procedure._"),
             title="Instances",
             collapsed=False,
-            height=self._INSTANCES_CARD_HEIGHT,
-            scroll=True,
         )
         self._refresh_instances()
 
@@ -839,6 +853,7 @@ class BatteryDataView(BaseDataView):
             source=source,
             columns=[{"id": "*", "title": "Instance", "width": "220px"}],
             options={"checkbox": True, "selectMode": "multi"},
+            stylesheets=self._tree_stylesheets(self._INSTANCES_CARD_HEIGHT),
         )
         # Read toggles from the echoed ``source``, NOT per-node ``select`` events:
         # a checkbox click fires click→deactivate→select→activate in one JS tick,
@@ -1801,6 +1816,7 @@ class BatteryDataView(BaseDataView):
     def _build_plot(self) -> None:
         """Override BaseDataView: render the initial plot into ``_plot_col``."""
         super()._build_plot()  # sets self._plot_col + self._plot_card
+        self._plot_card.collapsed = True
         self._build_figure()
 
     def _update_log_console(self) -> None:
@@ -1846,6 +1862,7 @@ class BatteryDataView(BaseDataView):
         self._app = Panelini(
             title=self._title,
             sidebar_enabled=True,
+            sidebar_visible=True,
             sidebars_max_width=420,
         )
         self._app.sidebar_set(self.sidebar_cards)

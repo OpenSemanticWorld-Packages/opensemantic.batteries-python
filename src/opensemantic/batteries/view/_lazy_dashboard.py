@@ -249,8 +249,6 @@ class LazyBatteryDataView(BatteryDataView):
             self._cell_tree,
             title="Cells",
             collapsed=False,
-            height=self._TREE_CARD_HEIGHT,
-            scroll=True,
         )
 
     def _build_procedure_card(self, nodes: Dict, edges: List) -> None:
@@ -261,8 +259,6 @@ class LazyBatteryDataView(BatteryDataView):
             self._proc_tree,
             title="Procedures",
             collapsed=False,
-            height=self._TREE_CARD_HEIGHT,
-            scroll=True,
         )
 
     def _make_lazy_tree(self, which: str, root: TreeNode, col: str) -> Wunderbaum:
@@ -281,6 +277,7 @@ class LazyBatteryDataView(BatteryDataView):
             source=[self._wb_node(which, root)],
             columns=[{"id": "*", "title": col, "width": "220px"}],
             options={"checkbox": True, "selectMode": "multi"},
+            stylesheets=self._tree_stylesheets(self._TREE_CARD_HEIGHT),
             lazy_load_callback=lambda key, req, w=which: self._lazy_children(
                 w, key, req
             ),
