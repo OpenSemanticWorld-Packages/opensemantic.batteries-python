@@ -34,9 +34,11 @@ actually connect.
 
 from __future__ import annotations
 
+import logging
 import re
+import time
 from pathlib import Path
-from typing import Any, List, Optional, Set, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from opensemantic.batteries._cycling import CyclingDatasetController
 from opensemantic.batteries.v1 import (
@@ -51,6 +53,11 @@ from opensemantic.batteries.view._backend import (
 )
 
 DEFAULT_WIKI_DOMAIN = "wiki-dev.open-semantic-lab.org"
+
+_log = logging.getLogger("opensemantic.batteries.view")
+
+# Titles per ``ask`` query when the tests of the datasets are looked up
+_ASK_CHUNK = 50
 
 
 def connect_osw(
@@ -74,7 +81,7 @@ def connect_osw(
         default_params.wiki_domain = wiki_domain
         return OswExpress(domain=wiki_domain, cred_filepath=cred)
     except Exception as exc:  # noqa: BLE001 — degrade gracefully, log why
-        print(f"[opensemantic.batteries.view] no OSL connection: {exc}")
+        _log.warning("no OSL connection: %s", exc)
         return None
 
 
@@ -113,6 +120,10 @@ class OSLBatteryBackend(BatteryDataBackend):
         # ``False`` -> one search per (cell, procedure) pair (the older, more
         #              conservative path — use if a wiki mishandles ``||``).
         self._disjunctive = disjunctive_query
+        # Wiki calls that failed (error or retries exhausted). A failed call
+        # returns an empty result, so the view reads this counter to tell a
+        # failure from a query without hits.
+        self.failed_queries = 0
         self._cell_root_iri = cell_root_iri or BatteryCell.get_cls_iri()
         self._proc_root_iri = (
             procedure_root_iri or ElectrochemicalTestProcedure.get_cls_iri()
@@ -179,20 +190,96 @@ class OSLBatteryBackend(BatteryDataBackend):
             titles = self._dataset_titles_or(cell_iris, proc_iris)
         else:
             titles = self._dataset_titles_per_pair(cell_iris, proc_iris)
-        seen: Set[str] = set()
+        unique = list(dict.fromkeys(titles))
+        mapping = self._test_mapping(unique, cell_iris, proc_iris)
         result: List[Dataset] = []
-        for title in titles:
-            if title in seen:
-                continue
-            seen.add(title)
+        for title in unique:
+            cell_iri, proc_iri = mapping.get(title, (None, None))
             result.append(
                 Dataset(
                     id=title,
                     label=self.page_name(title),
                     rows=self._rows_for(title),
+                    cell_iri=cell_iri,
+                    procedure_iri=proc_iri,
                 )
             )
         return result
+
+    def _test_mapping(
+        self, titles: List[str], cell_iris: List[str], proc_iris: List[str]
+    ) -> Dict[str, Tuple[Optional[str], Optional[str]]]:
+        """Map each dataset title to ``(cell iri, procedure iri)`` of its test.
+
+        One read-only ``ask`` query per chunk of at most ``_ASK_CHUNK`` titles
+        fetches the tests whose ``HasOutput`` is one of the titles, with the
+        printouts ``HasDut``, ``HasProcedure`` and ``HasOutput``. When a test
+        names several cells or procedures, the first one that is selected wins.
+        A dataset with several tests takes the first test and logs a warning; a
+        dataset without a test stays ``(None, None)`` and logs a warning.
+        """
+        mapping: Dict[str, Tuple[Optional[str], Optional[str]]] = {}
+        tests_of: Dict[str, List[str]] = {title: [] for title in titles}
+        for start in range(0, len(titles), _ASK_CHUNK):
+            chunk = titles[start : start + _ASK_CHUNK]
+            for test_title, printouts in self._ask_tests(chunk).items():
+                duts = self._printout_titles(printouts.get("HasDut"))
+                procs = self._printout_titles(printouts.get("HasProcedure"))
+                cell = next((d for d in duts if d in cell_iris), None)
+                proc = next((p for p in procs if p in proc_iris), None)
+                pair = (
+                    cell or (duts[0] if duts else None),
+                    proc or (procs[0] if procs else None),
+                )
+                for out in self._printout_titles(printouts.get("HasOutput")):
+                    if out not in tests_of:
+                        continue
+                    tests_of[out].append(test_title)
+                    mapping.setdefault(out, pair)
+        for title, tests in tests_of.items():
+            if not tests:
+                _log.warning("dataset %s has no linked test", title)
+            elif len(tests) > 1:
+                _log.warning(
+                    "dataset %s has %d tests (%s), using the first",
+                    title,
+                    len(tests),
+                    ", ".join(tests),
+                )
+        return mapping
+
+    @staticmethod
+    def _printout_titles(values: Optional[List[Any]]) -> List[str]:
+        """Page titles of an ``ask`` printout (a list of page dicts)."""
+        titles = []
+        for value in values or []:
+            title = value.get("fulltext") if isinstance(value, dict) else value
+            if title:
+                titles.append(str(title))
+        return titles
+
+    def _ask_tests(self, titles: List[str]) -> Dict[str, Dict[str, Any]]:
+        """``{test title: printouts}`` of the tests that output one of titles."""
+        query = (
+            f"[[HasOutput::{'||'.join(titles)}]]"
+            "|?HasDut|?HasProcedure|?HasOutput|limit=500"
+        )
+        response = self._call_with_retries(
+            "ask",
+            query,
+            lambda: self._osw.site._site.api("ask", query=query),
+            lambda r: len((r.get("query") or {}).get("results") or {}),
+        )
+        if not response:
+            return {}
+        if response.get("query-continue-offset"):
+            _log.warning("ask result is truncated at 500 tests")
+        results = (response.get("query") or {}).get("results") or {}
+        if isinstance(results, list):  # SMW answers a list when it is empty
+            return {}
+        return {
+            title: (entry.get("printouts") or {}) for title, entry in results.items()
+        }
 
     def _dataset_titles_or(
         self, cell_iris: List[str], proc_iris: List[str]
@@ -221,14 +308,16 @@ class OSLBatteryBackend(BatteryDataBackend):
     def page_name(self, iri: str) -> str:
         """Human-readable ``name`` for a page title, cached (falls back to title)."""
         if iri in self._name_cache:
+            _log.debug("page_name %s: cache hit", iri)
             return self._name_cache[iri]
+        _log.debug("page_name %s: cache miss, fetching", iri)
         name = iri
         if self._osw is not None:
             try:
                 content = self._osw.site.get_page_content([iri]).contents[iri]
                 name = content["jsondata"].get("name", iri)
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as exc:  # noqa: BLE001
+                _log.warning("page_name %s failed: %s", iri, exc)
         self._name_cache[iri] = name
         return name
 
@@ -238,19 +327,68 @@ class OSLBatteryBackend(BatteryDataBackend):
         """Run a semantic search, returning page titles (``[]`` on empty/failure)."""
         if self._osw is None:
             return []
-        for _ in range(self._SEARCH_RETRIES):
-            try:
-                return list(
-                    self._osw.site.semantic_search(
-                        self._osw.site.SearchParam(query=query, debug=False)
-                    )
+        hits = self._call_with_retries(
+            "query",
+            query,
+            lambda: list(
+                self._osw.site.semantic_search(
+                    self._osw.site.SearchParam(query=query, debug=False)
                 )
-            except AttributeError:
-                continue  # flaky zero-hit quirk — retry, then treat as empty
+            ),
+        )
+        return hits or []
+
+    def _call_with_retries(
+        self,
+        kind: str,
+        query: str,
+        call: Callable[[], Any],
+        count: Callable[[Any], int] = len,
+    ) -> Any:
+        """Run a wiki call with the ``AttributeError`` retries, logging each step.
+
+        Returns the call's result, or ``None`` when the retries are exhausted or
+        another exception occurs (both log a warning).
+        """
+        _log.debug("%s start: %s", kind, query)
+        began = time.perf_counter()
+        for attempt in range(self._SEARCH_RETRIES):
+            try:
+                result = call()
+            except AttributeError as exc:
+                # flaky zero-hit quirk - retry, then treat as empty
+                _log.debug(
+                    "%s retry %d/%d after AttributeError: %s",
+                    kind,
+                    attempt + 1,
+                    self._SEARCH_RETRIES,
+                    exc,
+                )
+                continue
             except Exception as exc:  # noqa: BLE001
-                print(f"[opensemantic.batteries.view] query failed: {query!r}: {exc}")
-                return []
-        return []
+                _log.warning("%s failed: %s: %s", kind, query, exc)
+                self.failed_queries += 1
+                return None
+            try:
+                hits = count(result)
+            except (TypeError, AttributeError):
+                hits = 0
+            _log.info(
+                "%s done: %d hits in %.2f s, %d retries",
+                kind,
+                hits,
+                time.perf_counter() - began,
+                attempt,
+            )
+            return result
+        _log.warning(
+            "%s gave up after %d AttributeError retries: %s",
+            kind,
+            self._SEARCH_RETRIES,
+            query,
+        )
+        self.failed_queries += 1
+        return None
 
     def _subclasses(self, cat_iri: str) -> List[str]:
         return self._search(f"[[SubClassOf::{cat_iri}]]")
@@ -288,16 +426,29 @@ class OSLBatteryBackend(BatteryDataBackend):
         or more datasets; both are resolved to a flat list of rows.
         """
         if title in self._rows_cache:
+            _log.debug("rows %s: cache hit", title)
             return self._rows_cache[title]
         rows: List[Any] = []
         if self._osw is not None:
+            began = time.perf_counter()
             try:
-                rows = self._entity_rows(self._osw.load_entity(title))
-            except Exception as exc:  # noqa: BLE001
-                print(
-                    "[opensemantic.batteries.view] "
-                    f"load_entity({title!r}) failed: {exc}"
+                entity = self._osw.load_entity(title)
+                if getattr(entity, "data", None):
+                    source = "inline"
+                elif getattr(entity, "distributions", None):
+                    source = "file distribution"
+                else:
+                    source = "output datasets"
+                rows = self._entity_rows(entity)
+                _log.info(
+                    "loaded %s: %d rows, source %s, %.2f s",
+                    title,
+                    len(rows),
+                    source,
+                    time.perf_counter() - began,
                 )
+            except Exception as exc:  # noqa: BLE001
+                _log.warning("load_entity(%r) failed: %s", title, exc)
         self._rows_cache[title] = rows
         return rows
 
@@ -349,7 +500,7 @@ class OSLBatteryBackend(BatteryDataBackend):
             ]
             return list(controller.materialize_data(osw=self._osw) or [])
         except Exception as exc:  # noqa: BLE001 - degrade to empty rows
-            print(f"[opensemantic.batteries.view] materialize failed: {exc}")
+            _log.warning("materialize failed: %s", exc)
             return []
 
     def _with_wiki_file(self, distribution: Any) -> Any:
@@ -367,7 +518,7 @@ class OSLBatteryBackend(BatteryDataBackend):
             if getattr(distribution, "file", None) is not None:
                 return distribution
         except Exception as exc:  # noqa: BLE001 - fall through to the URL
-            print(f"[opensemantic.batteries.view] distribution file unreadable: {exc}")
+            _log.warning("distribution file unreadable: %s", exc)
         url = getattr(distribution, "download_url", None) or getattr(
             distribution, "access_url", None
         )

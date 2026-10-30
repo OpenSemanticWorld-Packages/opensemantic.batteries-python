@@ -87,6 +87,7 @@ from opensemantic.characteristics.quantitative.v1 import (
 )
 
 _logger = logging.getLogger(__name__)
+_view_log = logging.getLogger("opensemantic.batteries.view")
 
 
 # ---------------------------------------------------------------------------
@@ -1261,6 +1262,7 @@ class BatteryDataView(BaseDataView):
         if not hasattr(self, "_plot_col"):
             return  # _build_plot has not run yet
         fig = self._make_figure()
+        self._log_plot("time-series plot", fig, "no data selected")
         self._plot_col.objects = [
             (
                 pn.pane.Bokeh(fig, sizing_mode="stretch_width")
@@ -1529,11 +1531,13 @@ class BatteryDataView(BaseDataView):
         if not hasattr(self, "_cycle_col"):
             return  # _build_cycle_card has not run yet
         fig = self._make_cycle_figure()
+        note = self._step_type_note("cycle") if fig is None else None
+        self._log_plot("cycle plot", fig, note or "no cycle series can be drawn")
         self._cycle_col.objects = [
             (
                 pn.pane.Bokeh(fig, sizing_mode="stretch_width")
                 if fig is not None
-                else pn.pane.Markdown("_No cycle data._", margin=(10, 6))
+                else pn.pane.Markdown(note or "_No cycle data._", margin=(10, 6))
             )
         ]
 
@@ -1733,13 +1737,66 @@ class BatteryDataView(BaseDataView):
         if not hasattr(self, "_batch_col"):
             return  # _build_batch_cards has not run yet
         fig = self._make_batch_figure()
+        note = self._step_type_note("batch") if fig is None else None
+        self._log_plot("batch plot", fig, note or "no batch series can be drawn")
         self._batch_col.objects = [
             (
                 pn.pane.Bokeh(fig, sizing_mode="stretch_width")
                 if fig is not None
-                else pn.pane.Markdown("_No batch data._", margin=(10, 6))
+                else pn.pane.Markdown(note or "_No batch data._", margin=(10, 6))
             )
         ]
+
+    def _step_type_note(self, what: str) -> Optional[str]:
+        """Placeholder text for datasets without rows or ``step_type``, else None.
+
+        Without ``step_type`` on any row the cycle summary cannot separate
+        charge from discharge, so the cycle and batch plots stay empty. A
+        dataset without rows is reported separately (nothing loaded).
+        """
+        traces = self._resolve_traces()
+        # the lazy view leaves datasets without rows out of the traces
+        n_empty = len([t for t in traces if not t.get("rows")])
+        n_empty += self._unplotted_empty_datasets()
+        no_step = [
+            t
+            for t in traces
+            if t.get("rows")
+            and all(getattr(r, "step_type", None) is None for r in t["rows"])
+        ]
+        total = len(traces) + self._unplotted_empty_datasets()
+        if not total or n_empty + len(no_step) != total:
+            return None
+
+        def count(n: int) -> str:
+            noun, verb = ("dataset", "has") if total == 1 else ("datasets", "have")
+            return f"{n} of {total} {noun} {verb}"
+
+        parts = []
+        if n_empty:
+            parts.append(f"{count(n_empty)} no rows (nothing loaded)")
+        if no_step:
+            parts.append(
+                f"{count(len(no_step))} no step_type, so charge and discharge "
+                "cannot be separated"
+            )
+        return f"_No {what} data: " + "; ".join(parts) + "._"
+
+    def _unplotted_empty_datasets(self) -> int:
+        """Ticked datasets that are left out of the traces for having no rows."""
+        return 0
+
+    @staticmethod
+    def _log_plot(name: str, fig: Any, reason: str) -> None:
+        """Log a plot rebuild: its series count, or why it shows a placeholder."""
+        if fig is None:
+            _view_log.info("%s shows a placeholder: %s", name, reason)
+            return
+        try:
+            series = sum(len(legend.items) for legend in fig.legend)
+        except Exception:  # noqa: BLE001 - the count is only informative
+            series = -1
+        _view_log.debug("%s rebuilt: %d series", name, series)
 
     def _build_plot(self) -> None:
         """Override BaseDataView: render the initial plot into ``_plot_col``."""

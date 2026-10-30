@@ -24,32 +24,58 @@ file next to this script (``examples/accounts.pwd.yaml``) — the same connectio
 just stay empty because every query returns nothing.
 """
 
+import logging
+import os
 from pathlib import Path
 
 import panel as pn
 
 # Row class whose typed fields (Time, Voltage, ElectricCurrent, ...) drive the
-# axis grid and unit dropdowns. Same characteristic classes the wiki datasets
-# use, so loaded rows convert units through the shared machinery unchanged.
-from battery_example_data import CyclingDataRow
-
+# axis grid and unit dropdowns. It adds step_type, which the cycle and batch
+# plots need to separate charge from discharge.
+from opensemantic.batteries import StepTypedCyclingDataRow
 from opensemantic.batteries.view import (
     LazyBatteryDataView,
     OSLBatteryBackend,
     connect_osw,
 )
 
+# Log level of the dashboard: set the environment variable OSB_VIEW_LOG (for
+# example DEBUG or WARNING) or change this constant. DEBUG logs every query text.
+# An explicit level is kept when the view starts with show_log=True.
+DEFAULT_LOG_LEVEL = "INFO"
+
+logger = logging.getLogger("opensemantic.batteries.view")
+logger.setLevel(os.environ.get("OSB_VIEW_LOG", DEFAULT_LOG_LEVEL).upper())
+if not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
+    _terminal = logging.StreamHandler()
+    _terminal.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)-7s %(message)s", "%H:%M:%S")
+    )
+    logger.addHandler(_terminal)
+# The handler above prints the records, so do not pass them to the root handler
+# that panel serve configures (every record would appear twice).
+logger.propagate = False
+
 pn.extension()
 
 backend = OSLBatteryBackend(
     osw_obj=connect_osw(Path(__file__).parent / "accounts.pwd.yaml"),
-    row_class=CyclingDataRow,
-    field_names=["test_time", "voltage", "current", "capacity", "cycle_count"],
+    row_class=StepTypedCyclingDataRow,
+    field_names=[
+        "test_time",
+        "voltage",
+        "current",
+        "capacity",
+        "cycle_count",
+        "step_type",
+    ],
 )
 
 view = LazyBatteryDataView(
     backend=backend,
     title="Battery Cycling Dashboard — OSL",
+    show_log=True,
 )
 
 view.servable()

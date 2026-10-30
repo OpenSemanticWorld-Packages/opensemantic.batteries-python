@@ -22,7 +22,12 @@ change here. See :mod:`opensemantic.batteries.view._backend`.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Set, Tuple
+import collections
+import html
+import logging
+import time
+import weakref
+from typing import Any, Deque, Dict, List, Optional, Set, Tuple
 
 import panel as pn
 from panelini.panels.wunderbaum import Wunderbaum
@@ -32,6 +37,57 @@ from opensemantic.batteries.view._battery_dashboard import (
     BatteryDataView,
     _FieldChannel,
 )
+
+_log = logging.getLogger("opensemantic.batteries.view")
+
+# Newest log records kept in the log console
+_LOG_CAPACITY = 500
+
+# One log handler per session (Bokeh document, or ``None`` without a server), so a
+# ``panel serve --dev`` reload replaces the handler of the previous view
+_SESSION_HANDLERS: Dict[Any, "_PaneLogHandler"] = {}
+
+
+class _PaneLogHandler(logging.Handler):
+    """Logging handler that writes the newest records into a view's log pane.
+
+    Holds the view by weak reference: when the view is collected, the handler
+    removes itself from the logger on the next record.
+    """
+
+    def __init__(self, view: "LazyBatteryDataView") -> None:
+        super().__init__()
+        self._view = weakref.ref(view)
+        self.lines: Deque[str] = collections.deque(maxlen=_LOG_CAPACITY)
+        self.setFormatter(logging.Formatter("%(message)s"))
+
+    def emit(self, record: logging.LogRecord) -> None:
+        view = self._view()
+        if view is None:
+            _log.removeHandler(self)
+            return
+        stamp = time.strftime("%H:%M:%S", time.localtime(record.created))
+        text = html.escape(
+            f"{stamp}.{int(record.msecs):03d} {record.levelname:<7} "
+            f"{self.format(record)}"
+        )
+        self.lines.appendleft(f"<div>{text}</div>")
+        self.refresh()
+
+    def refresh(self) -> None:
+        view = self._view()
+        if view is not None:
+            view._log_pane.object = (
+                "<div style='font-family:monospace;white-space:pre-wrap'>"
+                + "".join(self.lines)
+                + "</div>"
+                if self.lines
+                else ""
+            )
+
+    def clear(self) -> None:
+        self.lines.clear()
+        self.refresh()
 
 
 class LazyBatteryDataView(BatteryDataView):
@@ -58,9 +114,22 @@ class LazyBatteryDataView(BatteryDataView):
         backend: BatteryDataBackend,
         title: str = "Battery Cycling Dashboard",
         field_names: Optional[List[str]] = None,
+        show_log: bool = False,
     ) -> None:
         self._backend = backend
         self._row_cls = backend.row_class
+
+        # ``show_log`` shows the log card (records of the
+        # ``opensemantic.batteries.view`` logger, newest first) and a status line
+        # above the plots. The status texts are kept in ``_status_history``.
+        self._show_log = show_log
+        self._log_handler: Optional[_PaneLogHandler] = None
+        self._status_history: List[str] = []
+        self._status_pane = pn.pane.Markdown(
+            "", margin=(5, 10), visible=show_log, sizing_mode="stretch_width"
+        )
+        # cells without a parent category already reported
+        self._warned_no_parent: Set[str] = set()
 
         # Datasets matching the current selection: [{idx, id, label, rows}].
         # Set before super().__init__ because it builds the Instances card,
@@ -110,6 +179,48 @@ class LazyBatteryDataView(BatteryDataView):
             field_names=field_names if field_names is not None else backend.field_names,
             title=title,
         )
+        if show_log:
+            self._attach_log_handler()
+
+    # -- Log console and status line (opt-in) --------------------------------
+
+    def _build_log_console(self) -> None:
+        super()._build_log_console()
+        if not self._show_log:
+            return
+        self._log_card.visible = True
+        clear = pn.widgets.Button(name="Clear", button_type="default", width=80)
+        clear.on_click(lambda _event: self._clear_log())
+        self._log_card.insert(0, clear)
+
+    def _attach_log_handler(self) -> None:
+        """Attach one pane handler; replace the one of a previous view."""
+        if self._log_handler is not None:
+            return
+        session = pn.state.curdoc
+        key = id(session) if session is not None else None
+        previous = _SESSION_HANDLERS.pop(key, None)
+        if previous is not None:
+            _log.removeHandler(previous)
+        handler = _PaneLogHandler(self)
+        _log.addHandler(handler)
+        if _log.level == logging.NOTSET:  # a configured level is respected
+            _log.setLevel(logging.INFO)
+        _SESSION_HANDLERS[key] = handler
+        self._log_handler = handler
+
+    def _clear_log(self) -> None:
+        if self._log_handler is not None:
+            self._log_handler.clear()
+
+    def _set_status(self, text: str) -> None:
+        self._status_history.append(text)
+        self._status_pane.object = text
+
+    @property
+    def main_cards(self) -> List[Any]:
+        cards = super().main_cards
+        return [self._status_pane] + cards if self._show_log else cards
 
     # -- Field channels from the row class (no sample rows to scan) -----------
 
@@ -386,10 +497,52 @@ class LazyBatteryDataView(BatteryDataView):
         return self._descendant_cache[class_iri]
 
     def _apply_selection(self) -> None:
-        """Push the selection sets into the query and re-plot."""
+        """Push the selection sets into the query and re-plot.
+
+        With ``show_log`` the status line shows "Querying" first. Under a
+        server (a Bokeh document is present) the query and the plots then run
+        in the next tick, so the browser shows the status before the work.
+        """
         self._selected_cell_ids = list(self._sel_instances["cell"])
         self._selected_proc_ids = list(self._sel_instances["proc"])
-        self._run_query()
+        n_cells = len(self._selected_cell_ids)
+        n_procs = len(self._selected_proc_ids)
+        if self._show_log and n_cells and n_procs:
+            self._set_status(
+                f"Querying datasets for {n_cells} cells x {n_procs} procedures..."
+            )
+            doc = pn.state.curdoc
+            if doc is not None:
+                doc.add_next_tick_callback(self._finish_selection)
+                return
+        self._finish_selection()
+
+    def _finish_selection(self) -> None:
+        """Run the query for the current selection, then refresh and re-plot."""
+        began = time.perf_counter()
+        if not self._selected_cell_ids or not self._selected_proc_ids:
+            if self._show_log:
+                self._set_status("No query: select at least one cell and one procedure")
+            self._run_query()
+            self._refresh_instances()
+            self._build_figure()
+            return
+        failed_before = getattr(self._backend, "failed_queries", 0)
+        try:
+            self._run_query()
+        except Exception as exc:  # noqa: BLE001 - keep the dashboard alive
+            _log.warning("dataset query failed: %s", exc)
+            self._matches = []
+            if self._show_log:
+                self._set_status(f"Failed: {exc}")
+        else:
+            if self._show_log:
+                failed = getattr(self._backend, "failed_queries", 0) - failed_before
+                note = f" ({failed} wiki queries failed, see log)" if failed else ""
+                self._set_status(
+                    f"Done: {len(self._matches)} datasets in "
+                    f"{time.perf_counter() - began:.1f} s{note}"
+                )
         self._refresh_instances()
         self._build_figure()
 
@@ -403,8 +556,16 @@ class LazyBatteryDataView(BatteryDataView):
         self._matches = []
         if not self._selected_cell_ids or not self._selected_proc_ids:
             return
+        began = time.perf_counter()
         datasets = self._backend.datasets(
             self._selected_cell_ids, self._selected_proc_ids
+        )
+        _log.info(
+            "selection: cells %s, procedures %s, %d datasets in %.2f s",
+            self._labelled(self._selected_cell_ids),
+            self._labelled(self._selected_proc_ids),
+            len(datasets),
+            time.perf_counter() - began,
         )
         self._matches = [
             {
@@ -417,6 +578,10 @@ class LazyBatteryDataView(BatteryDataView):
             }
             for i, ds in enumerate(datasets)
         ]
+
+    def _labelled(self, iris: List[str]) -> List[str]:
+        """``iri (label)`` for each IRI, for the log."""
+        return [f"{iri} ({self._backend.page_name(iri)})" for iri in iris]
 
     # -- Reuse the base plot pipeline, served from _matches ------------------
 
@@ -436,6 +601,9 @@ class LazyBatteryDataView(BatteryDataView):
             cell_iri = m.get("cell_iri")
             proc_iri = m.get("procedure_iri")
             parent = self._parent_of.get(cell_iri) if cell_iri else None
+            if cell_iri and not parent and cell_iri not in self._warned_no_parent:
+                self._warned_no_parent.add(cell_iri)
+                _log.warning("cell %s has no parent category", cell_iri)
             records.append(
                 {
                     "key": m["id"],
@@ -451,6 +619,15 @@ class LazyBatteryDataView(BatteryDataView):
                 }
             )
         return records
+
+    def _unplotted_empty_datasets(self) -> int:
+        return len(
+            [
+                m
+                for m in self._matching_tests()
+                if self._instance_selections.get(m["idx"], True) and not m["rows"]
+            ]
+        )
 
     def _resolve_traces(self) -> List[Dict]:
         traces: List[Dict] = []

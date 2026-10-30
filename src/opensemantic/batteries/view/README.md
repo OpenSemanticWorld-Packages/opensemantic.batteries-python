@@ -66,6 +66,39 @@ backend = OSLBatteryBackend(
 LazyBatteryDataView(backend=backend).servable()
 ```
 
+After the dataset titles are known, `OSLBatteryBackend.datasets` runs one
+read-only `ask` query per chunk of 50 titles (`[[HasOutput::t1||t2...]]` with
+the printouts `HasDut`, `HasProcedure` and `HasOutput`) and fills `cell_iri`
+and `procedure_iri` of each `Dataset` from the test that outputs it. A dataset
+without a test keeps `None` and logs a warning; with several tests the first
+one wins and a warning is logged. A cell without a parent category goes to
+"(none)" in the cell batches and logs a warning.
+
+### Logging and the log console
+
+The backend and the lazy view log to `logging.getLogger("opensemantic.batteries.view")`:
+queries (DEBUG: query text, INFO: hits, duration and retries), row loading,
+selections, plot rebuilds and mapping problems (WARNING). Configure the level and
+the handlers as usual; `examples/battery_dashboard_OSL.py` reads the level from
+the environment variable `OSB_VIEW_LOG` (default `INFO`).
+
+`LazyBatteryDataView(..., show_log=True)` shows the log card (newest record
+first, the last 500 records, with a "Clear" button) and a status line above the
+plots ("Querying datasets for N cells x M procedures...", then "Done: K datasets
+in X.X s" or "Failed: ..."). A failed wiki call returns an empty result, so
+"Done" adds "(N wiki queries failed, see log)" when the backend's
+`failed_queries` counter rose during the query. With an empty selection it
+shows "No query:
+select at least one cell and one procedure". Under `panel serve` the query and
+the plots run in the next tick, so the browser shows the status first. With
+`show_log=False` (default) nothing changes. If the logger has no level set,
+`show_log=True` sets it to INFO; an explicit level is kept.
+
+When no plotted dataset has a `step_type`, the cycle and batch plots show a
+placeholder that names the number of datasets without it (datasets without rows
+are named separately). Use
+`StepTypedCyclingDataRow` as `row_class` for such data.
+
 To try the lazy view without a wiki (no credentials, no network) run
 [`examples/battery_dashboard_lazy.py`](../../../../examples/battery_dashboard_lazy.py),
 which wires an in-memory `BatteryDataBackend` (the same fixture the

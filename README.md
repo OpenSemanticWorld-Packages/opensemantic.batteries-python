@@ -498,12 +498,6 @@ TEST_OSL_DOMAIN=wiki-dev.open-semantic-lab.org   TEST_OSL_CRED_FILEPATH=examples
   with `charge_capacity`, `discharge_capacity`, `charge_coulomb_efficiency` and
   `discharge_coulomb_efficiency`), regenerate the models, then remove the local
   module.
-- **Provide `cell_iri` and `procedure_iri` per dataset in the OSL
-  backend**: `Dataset` has the optional fields `cell_iri` and
-  `procedure_iri`, which the Batches card uses to suggest batches. The
-  OSL backend does not fill them yet, because its combined query loses
-  the cell and procedure pair of a dataset. Until it does, the batch
-  suggestions put the OSL datasets in "(none)".
 
 ## Note
 

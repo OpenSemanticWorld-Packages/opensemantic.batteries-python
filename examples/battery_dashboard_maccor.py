@@ -132,5 +132,6 @@ class MaccorBatteryBackend(BatteryDataBackend):
 view = LazyBatteryDataView(
     backend=MaccorBatteryBackend(),
     title="Battery Cycling Dashboard - Maccor",
+    show_log=True,
 )
 view.servable()
