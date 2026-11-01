@@ -96,6 +96,24 @@ _view_log = logging.getLogger("opensemantic.batteries.view")
 # ---------------------------------------------------------------------------
 
 
+def _trace_len(trace: Dict) -> int:
+    """How many measurements a trace carries, whichever form it is in."""
+    df = trace.get("df")
+    if df is not None:
+        return len(df)
+    return len(trace.get("rows") or [])
+
+
+def _has_step_type(trace: Dict) -> bool:
+    """Whether any measurement of the trace names its step type."""
+    df = trace.get("df")
+    if df is not None:
+        return "step_type" in df.columns and bool(df["step_type"].notna().any())
+    return any(
+        getattr(row, "step_type", None) is not None for row in trace.get("rows") or []
+    )
+
+
 class _FieldChannel:
     """Channel-like adapter around a row field's characteristic class.
 
@@ -1198,18 +1216,26 @@ class BatteryDataView(BaseDataView):
         known key replace the entry instead of returning a stale frame. A
         failed conversion is cached as ``None`` too.
         """
-        rows = trace.get("rows")
-        key = trace.get("key", id(rows))
+        source = trace.get("df") if trace.get("df") is not None else trace.get("rows")
+        key = trace.get("key", id(source))
         hit = self._df_cache.get(key)
-        if hit is not None and hit[0] is rows:
+        if hit is not None and hit[0] is source:
             return hit[1]
         df = self._trace_df(trace)
-        self._df_cache[key] = (rows, df)
+        self._df_cache[key] = (source, df)
         return df
 
     @staticmethod
     def _trace_df(trace: Dict):
-        """The trace's rows as a pint DataFrame, or ``None`` if not convertible."""
+        """The trace's data as a pint DataFrame, or ``None`` if not convertible.
+
+        A backend that loads frames puts one in the trace and there is nothing
+        to convert. A trace that carries rows is framed here, which is what the
+        views built on in-memory test objects pass.
+        """
+        df = trace.get("df")
+        if df is not None:
+            return df if len(df) else None
         rows = trace.get("rows") or []
         if not rows:
             return None
@@ -1412,13 +1438,13 @@ class BatteryDataView(BaseDataView):
     # -- Cycle series --------------------------------------------------------
 
     def _cached_cycle_df(self, trace: Dict):
-        """The trace's cycle summary as a pint DataFrame, built once per rows list.
+        """The trace's cycle summary as a pint DataFrame, built once per source.
 
         Cached like :meth:`_cached_trace_df`: keyed by the trace's ``"key"`` or
-        the identity of its rows, reused only while the trace carries the same
-        rows object. ``None`` when the rows give no cycle table.
+        the identity of what it carries, reused only while the trace carries
+        that same object. ``None`` when the data gives no cycle table.
         """
-        rows = trace.get("rows")
+        rows = trace.get("df") if trace.get("df") is not None else trace.get("rows")
         key = trace.get("key", id(rows))
         hit = self._cycle_cache.get(key)
         if hit is not None and hit[0] is rows:
@@ -1429,14 +1455,20 @@ class BatteryDataView(BaseDataView):
 
     @staticmethod
     def _cycle_df(trace: Dict):
-        """The cycle summary of the trace's rows as a frame, or ``None``."""
-        rows = trace.get("rows") or []
-        if not rows:
+        """The cycle summary of the trace as a frame, or ``None``.
+
+        Summarizes the frame when the trace carries one, which reads the four
+        columns it needs instead of a model per cell.
+        """
+        data = trace.get("df")
+        if data is None:
+            data = trace.get("rows") or []
+        if data is None or not len(data):
             return None
         try:
-            summary = cycle_summary(rows, label=trace.get("label") or "trace")
+            summary = cycle_summary(data, label=trace.get("label") or "trace")
             return summary.to_df() if summary.data else None
-        except Exception:  # noqa: BLE001 - rows without cycle data
+        except Exception:  # noqa: BLE001 - data without cycle information
             return None
 
     def _cycle_series(self, trace: Dict, column: str, unit_name: Optional[str]):
@@ -1772,14 +1804,9 @@ class BatteryDataView(BaseDataView):
         """
         traces = self._resolve_traces()
         # the lazy view leaves datasets without rows out of the traces
-        n_empty = len([t for t in traces if not t.get("rows")])
+        n_empty = len([t for t in traces if not _trace_len(t)])
         n_empty += self._unplotted_empty_datasets()
-        no_step = [
-            t
-            for t in traces
-            if t.get("rows")
-            and all(getattr(r, "step_type", None) is None for r in t["rows"])
-        ]
+        no_step = [t for t in traces if _trace_len(t) and not _has_step_type(t)]
         total = len(traces) + self._unplotted_empty_datasets()
         if not total or n_empty + len(no_step) != total:
             return None

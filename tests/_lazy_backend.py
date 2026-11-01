@@ -39,6 +39,23 @@ def _rows() -> List[Row]:
     ]
 
 
+def _df():
+    """The same measurements as a frame, the form a backend hands the view."""
+    import pandas as pd
+
+    return pd.DataFrame(
+        {
+            "test_time": pd.Series([float(i) for i in range(3)], dtype="pint[second]"),
+            "voltage": pd.Series(
+                [3.0 + 0.1 * i for i in range(3)], dtype="pint[volt]"
+            ),
+            "current": pd.Series(
+                [0.5 * (i % 2) for i in range(3)], dtype="pint[ampere]"
+            ),
+        }
+    )
+
+
 class MemoryBatteryBackend(BatteryDataBackend):
     _NODES: Dict[str, Tuple[str, str, List[str]]] = {
         "Category:BatteryCell": (
@@ -106,7 +123,7 @@ class MemoryBatteryBackend(BatteryDataBackend):
                         Dataset(
                             id=f"{c}|{p}",
                             label=f"{self.page_name(c)} - {self.page_name(p)}",
-                            rows=_rows(),
+                            df=_df(),
                             cell_iri=c,
                             procedure_iri=p,
                         )

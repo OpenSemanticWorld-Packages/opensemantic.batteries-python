@@ -52,8 +52,10 @@ class TreeNode:
 class Dataset:
     """A plottable cycling dataset matching the current cell + procedure selection.
 
-    ``rows`` are the typed row objects the view plots (instances of the
-    backend's :attr:`~BatteryDataBackend.row_class`). ``id`` is a stable,
+    ``df`` holds the measurements as a pint-pandas frame, one column per row
+    field, which is the form the view plots and summarizes. Loading a frame
+    costs what pandas needs; building a model per cell first is what made a
+    large dataset take minutes. ``id`` is a stable,
     de-duplicated identifier; ``label`` is what the Instances card and plot
     legend show. ``cell_iri`` and ``procedure_iri`` name the cell and the
     procedure the dataset belongs to; the Batches card uses them to suggest
@@ -62,7 +64,7 @@ class Dataset:
 
     id: str
     label: str
-    rows: List[Any] = field(default_factory=list)
+    df: Any = None
     cell_iri: Optional[str] = None
     procedure_iri: Optional[str] = None
 
@@ -84,8 +86,8 @@ class BatteryDataBackend(ABC):
         """The (pydantic) model class of a single cycling row.
 
         Its typed characteristic fields (``Time``, ``Voltage``, …) drive the
-        axis grid and unit dropdowns, and the objects in :attr:`Dataset.rows`
-        are instances of it.
+        axis grid and unit dropdowns. The frame in :attr:`Dataset.df` carries
+        one column per field of it.
         """
 
     @property
