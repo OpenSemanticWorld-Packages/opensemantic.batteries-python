@@ -46,9 +46,7 @@ def _df():
     return pd.DataFrame(
         {
             "test_time": pd.Series([float(i) for i in range(3)], dtype="pint[second]"),
-            "voltage": pd.Series(
-                [3.0 + 0.1 * i for i in range(3)], dtype="pint[volt]"
-            ),
+            "voltage": pd.Series([3.0 + 0.1 * i for i in range(3)], dtype="pint[volt]"),
             "current": pd.Series(
                 [0.5 * (i % 2) for i in range(3)], dtype="pint[ampere]"
             ),

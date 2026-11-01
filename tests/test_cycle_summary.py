@@ -62,10 +62,16 @@ def _capacities(summary):
     return [
         (
             row.cycle_count.value,
-            None if row.charge_capacity is None else round(row.charge_capacity.value, 6),
-            None
-            if row.discharge_capacity is None
-            else round(row.discharge_capacity.value, 6),
+            (
+                None
+                if row.charge_capacity is None
+                else round(row.charge_capacity.value, 6)
+            ),
+            (
+                None
+                if row.discharge_capacity is None
+                else round(row.discharge_capacity.value, 6)
+            ),
         )
         for row in summary.data
     ]
