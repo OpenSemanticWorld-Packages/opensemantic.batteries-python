@@ -25,7 +25,7 @@ from typing import Any, List, Optional, Tuple
 import panel as pn
 from osw.wtsite import WtSite
 
-from opensemantic.batteries import StepTypedCyclingDataRow
+from opensemantic.batteries.v1 import CyclingDataRow
 from opensemantic.batteries.view import (
     Dataset,
     LazyBatteryDataView,
@@ -157,7 +157,7 @@ class SingleEntityView(LazyBatteryDataView):
 backend = SingleEntityBackend(
     iri=DEFAULT_ID,
     osw_obj=connect_osw(Path(__file__).resolve().parent.parent / "accounts.pwd.yaml"),
-    row_class=StepTypedCyclingDataRow,
+    row_class=CyclingDataRow,
     field_names=[
         "test_time",
         "voltage",

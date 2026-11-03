@@ -14,9 +14,7 @@ The dashboard reverses step 1 with ``materialize_data``.
 
 Each entry in ``DATASETS`` names the wiki pages of its test and dataset, and
 the script writes to exactly those pages (``overwrite=True``), so a rerun
-replaces them in place instead of creating duplicates. The test uses the
-temporary ``ProcedureLinkedElectrochemicalTest``, which keeps the
-``HasProcedure`` link that the generated ``TestProcedureItem`` drops.
+replaces them in place instead of creating duplicates.
 
 Typing note: v1 ``ElectrochemicalTest.output`` is typed ``List[Item]``, so what
 it holds is read as an ``Item`` even though pydantic keeps the dataset's own
@@ -47,11 +45,8 @@ from osw.defaults import params as default_params
 from osw.defaults import paths as default_paths
 from osw.express import OswExpress
 
-from opensemantic.batteries import (
-    LinkedTestProcedureItem,
-    ProcedureLinkedElectrochemicalTest,
-    read_maccor,
-)
+from opensemantic.batteries import read_maccor
+from opensemantic.batteries.v1 import ElectrochemicalTest, TestProcedureItem
 from opensemantic.core.v1 import Label
 
 WIKI_DOMAIN = "wiki-dev.open-semantic-lab.org"
@@ -166,17 +161,15 @@ def build_dataset(osw_obj, spec: dict, fmt: str = "json"):
     return dataset
 
 
-def upload(
-    osw_obj, spec: dict, fmt: str = "json"
-) -> ProcedureLinkedElectrochemicalTest:
+def upload(osw_obj, spec: dict, fmt: str = "json") -> ElectrochemicalTest:
     dataset = build_dataset(osw_obj, spec, fmt)
 
-    test = ProcedureLinkedElectrochemicalTest(
+    test = ElectrochemicalTest(
         uuid=page_uuid(spec["test"]),
         label=[Label(text=spec["name"])],
         device_under_test=[spec["cell"]],
         test_procedure=[
-            LinkedTestProcedureItem(
+            TestProcedureItem(
                 test_procedure_subcategory=AGING_PROCEDURE,
                 test_procedure_instance=spec["procedure"],
                 test_procedure_instance_property="Property:HasProcedure",

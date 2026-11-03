@@ -126,11 +126,7 @@ Stage status today: **parse**, **unify**, **upload** and the read-side
 example scripts in `examples/osl/` (`upload_example_data_OSL.py` and
 `upload_large_dataset_OSL.py`), not by a library function. Large datasets store
 their rows in an uploaded `WikiFile` (JSON or CSV) that the dataset references
-through its distributions, instead of inline in `Dataset.data`. The current
-generated models drop the procedure link of a test, so the upload scripts use
-temporary classes that keep it (the synthetic example data does the same); see
-the known issue under
-[Linking a test to its procedure](#linking-a-test-to-its-procedure).
+through its distributions, instead of inline in `Dataset.data`.
 
 ## Installation
 
@@ -155,9 +151,8 @@ Extras from `setup.cfg`:
   `playwright install chromium` once after the installation.
 - `testing`: `setuptools`, `pytest`, `pytest-cov` and `maccor`.
 
-Two dependencies are temporary git pins: `opensemantic.base` is installed from
-the `main` branch of its repository, and `maccor-utility` from a pinned commit.
-See [Pending upstream fixes](#pending-upstream-fixes).
+One dependency is a temporary git pin: `maccor-utility` is installed from a
+pinned commit. See [Pending upstream fixes](#pending-upstream-fixes).
 
 ## Metadata models
 
@@ -250,41 +245,6 @@ test = ElectrochemicalTest(
 single `.protocol` object is still accepted as a legacy fallback. `output` is a
 **list** of datasets, and the dashboard plots the first one's `.data`.
 
-> **Known issue:** the currently generated `TestProcedureItem` has only
-> `test_procedure_subcategory`. The fields `test_procedure_instance` and
-> `test_procedure_instance_property` are missing, and Pydantic drops them
-> without an error. Until the schema is fixed (see
-> [Pending upstream fixes](#pending-upstream-fixes)), the code above creates a
-> test without a procedure link. The non-lazy `BatteryDataView` then matches
-> no data for that test, because it resolves the procedure through this
-> field. The OSL dashboard also needs the link: its dataset query matches a
-> test through
-> `HasProcedure` (`[[-HasOutput.HasProcedure::...]]`), so a stored test
-> without it is not found when a cell and a procedure are selected. The lazy
-> and Maccor dashboards do not use this field.
->
-> **Temporary fix:** `opensemantic.batteries` provides
-> `LinkedTestProcedureItem` and `ProcedureLinkedElectrochemicalTest`
-> (`src/opensemantic/batteries/_procedure_link.py`). They add the two fields
-> with the definitions of the earlier generated model, so the link is stored.
-> The synthetic example data (`examples/synthetic/battery_example_data.py`)
-> and the upload scripts (`examples/osl/upload_example_data_OSL.py`,
-> `examples/osl/upload_large_dataset_OSL.py` and
-> `examples/dev/upload_multistage_dataset_OSL.py`) use them:
->
-> ```python
-> test = ProcedureLinkedElectrochemicalTest(
->     label=[Label(text="Cell A - Formation")],
->     test_procedure=[
->         LinkedTestProcedureItem(test_procedure_instance=procedure.get_iri())
->     ],
->     output=[dataset],
-> )
-> ```
->
-> Remove the module and use the generated classes again once the schema ships
-> the fields.
-
 ## Pydantic layers (v1 and v2)
 
 Every generated model exists twice:
@@ -321,12 +281,10 @@ name stays unit-agnostic and the unit lives in the value:
 | `step_time` | Time | second | optional |
 | `capacity` | Electric charge | coulomb | optional |
 | `energy` | Energy | joule | optional |
-| `step_type` | `StepType` enum | none | optional, only on `StepTypedCyclingDataRow` |
+| `step_type` | `StepType` enum | none | optional |
 
-`step_type` is the operational mode of the step as reported by the cycler. It is
-not part of the generated schema yet. `CyclingDatasetController` therefore uses
-the local subclass `StepTypedCyclingDataRow`, which adds the field. The values
-of `StepType` are `CC_CHG`, `CC_DCH`, `CV_CHG`, `CV_DCH`, `CCCV_CHG`,
+`step_type` is the operational mode of the step as reported by the cycler. The
+values of `StepType` are `CC_CHG`, `CC_DCH`, `CV_CHG`, `CV_DCH`, `CCCV_CHG`,
 `CCCV_DCH`, `REST`, `OCV`, `EIS` and `OTHER`. In the time-series plot,
 `step_type` is a categorical axis (no unit, not usable as x).
 
@@ -627,44 +585,16 @@ skips the test.
 
 ## Pending upstream fixes
 
-- **Vectorize `to_df` in `opensemantic.base`**: `DatasetControllerMixin.to_df`
-  converts every value with its own `to_pint()` call, about 0.4 s for 2000 rows.
-  The dashboard caches the frames per dataset, but the first plot after a
-  selection is still slow. Fix: one pint array conversion per column.
-- **Add `step_type` to the schema**: `CyclingDataRow` in
-  `world.opensemantic.batteries` has no step mode. `_cycling.py` adds it with
-  the local `StepType` enum and the `StepTypedCyclingDataRow` subclass. Once
-  the schema ships `step_type`, regenerate the models, then remove the subclass
-  and the `data` override on `CyclingDatasetController`. The JSON and CSV
-  files keep working if the field name and the enum values stay the same.
-  `CyclingDatasetController.from_df` also drops empty object columns, because
-  the base `from_df` fails on them. Remove that guard once base handles them.
-- **Add a cycle table to the schema**: `CycleDataRow`, `CycleSummaryDataset`
-  and `cycle_summary` in `_cycle_summary.py` are a temporary local schema. Add
-  the table to `world.opensemantic.batteries` in wide form (one row per cycle
-  with `charge_capacity`, `discharge_capacity`, `charge_coulomb_efficiency` and
-  `discharge_coulomb_efficiency`), regenerate the models, then remove the local
-  module.
-- **Restore the procedure link in `TestProcedureItem`**: the regenerated model
-  has only `test_procedure_subcategory`. Add `test_procedure_instance` (the
-  procedure's OSW IRI) and `test_procedure_instance_property` back to the
-  `world.opensemantic.batteries` schema and regenerate, then remove the
-  temporary `_procedure_link.py` module. Until then the synthetic example
-  data and the upload scripts keep the test-to-procedure link only through
-  the temporary classes, and tests built with the generated classes have no
-  link (see
-  [Linking a test to its procedure](#linking-a-test-to-its-procedure)).
-  `docs/media/battery_dashboard.png` has not been regenerated since.
-- **Release `opensemantic.base`**: `setup.cfg` installs it from the `main` branch
-  of its repository, because `_cycling.py` needs the dataset controller that is
-  merged but not released. Replace the git URL with `opensemantic.base>=0.43.0`
-  or the first released version that contains it.
+- **Empty object columns in `from_df`**: `CyclingDatasetController.from_df`
+  drops object columns that are all missing (e.g. `step_type` of rows that
+  carry none), because the base `from_df` fails on them. Remove that guard
+  once base handles them.
 - **Release the `maccor-utility` fix**: `setup.cfg` pins `maccor-utility` to a git
   commit that contains the `TestTime` / `StepTime` duration-parsing fix (pull
   request OpenBattTools/maccor-utility#4). Repin to a released version once the
   pull request is merged and published.
 
-Both git pins block a release to PyPI, because PyPI rejects dependencies that
+That git pin blocks a release to PyPI, because PyPI rejects dependencies that
 are direct URLs.
 
 ## Note

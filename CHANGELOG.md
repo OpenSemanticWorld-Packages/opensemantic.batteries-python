@@ -2,9 +2,14 @@
 
 ## Unreleased
 
-- `StepType` enum and the `step_type` field (`StepTypedCyclingDataRow`), set by
-  the Maccor importer from the `Mode` column (`R` to `REST`, `C` to `CCCV_CHG`,
-  `D` to `CC_DCH`, other codes to `OTHER`).
+- `step_type` on `CyclingDataRow` with the `StepType` enum, set by the Maccor
+  importer from the `Mode` column (`R` to `REST`, `C` to `CCCV_CHG`, `D` to
+  `CC_DCH`, other codes to `OTHER`).
+- `CycleDataRow` and `CycleSummaryDataset` come from the schema package
+  (`world.opensemantic.batteries` 1.5.0), as does the procedure link on
+  `TestProcedureItem`. The local stand-ins are gone: `StepTypedCyclingDataRow`,
+  `LinkedTestProcedureItem` and `ProcedureLinkedElectrochemicalTest` are
+  replaced by `CyclingDataRow`, `TestProcedureItem` and `ElectrochemicalTest`.
 - Cycle series plot: charge and discharge capacity per cycle, summed over all
   charge and discharge step types, and the two coulomb efficiencies.
 - Batch series plot: mean per cycle with sample standard deviation as error

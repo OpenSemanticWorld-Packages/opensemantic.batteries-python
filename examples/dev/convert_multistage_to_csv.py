@@ -2,7 +2,7 @@
 
 Each CSV holds exactly the bytes of ``dataset.serialize_data("csv")`` for the
 dataset that ``upload_multistage_dataset_OSL.py`` builds, so a dashboard can read
-the cells from disk instead of the wiki. Building ``StepTypedCyclingDataRow``
+the cells from disk instead of the wiki. Building ``CyclingDataRow``
 objects takes about 8 minutes per cell, so the script writes the CSV from the
 pint-pandas frame of ``build_frame`` instead: the columns are converted to the
 units and column order of ``to_df()`` (SI units, ``step_time`` and ``energy``

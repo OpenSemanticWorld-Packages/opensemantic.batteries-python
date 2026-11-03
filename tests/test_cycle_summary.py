@@ -15,12 +15,8 @@ from typing import List, Optional
 
 import pytest
 
-from opensemantic.batteries import (
-    CyclingDatasetController,
-    StepType,
-    StepTypedCyclingDataRow,
-    cycle_summary,
-)
+from opensemantic.batteries import CyclingDatasetController, StepType, cycle_summary
+from opensemantic.batteries.v1 import CyclingDataRow
 from opensemantic.characteristics.quantitative.v1 import (
     Count,
     ElectricCharge,
@@ -37,8 +33,8 @@ def _row(
     cycle: Optional[float] = None,
     step: Optional[StepType] = None,
     count: Optional[float] = None,
-) -> StepTypedCyclingDataRow:
-    return StepTypedCyclingDataRow(
+) -> CyclingDataRow:
+    return CyclingDataRow(
         test_time=Time(value=t),
         voltage=Voltage(value=3.0),
         current=ElectricCurrent(value=0.5),
@@ -49,11 +45,11 @@ def _row(
     )
 
 
-def _as_frame(rows: List[StepTypedCyclingDataRow]):
+def _as_frame(rows: List[CyclingDataRow]):
     """The same rows in frame form, the way the dashboard holds them."""
 
     class _Typed(CyclingDatasetController):
-        data: Optional[List[StepTypedCyclingDataRow]] = None
+        data: Optional[List[CyclingDataRow]] = None
 
     return _Typed(label=[Label(text="rows")], data=rows).to_df()
 
