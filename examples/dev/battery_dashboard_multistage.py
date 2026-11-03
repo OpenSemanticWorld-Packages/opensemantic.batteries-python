@@ -3,9 +3,9 @@
 Same behaviour as ``battery_dashboard_maccor.py``, but each cell is a
 multi-stage aging cell read from ``csv_osl`` (written by
 ``convert_multistage_to_csv.py``). The CSV is the file that OSL stores for the
-cell, so the load path is the one of ``materialize_data``: ``read_csv`` of the
-bytes, then ``from_df`` of the dataset class. The rows of a cell are loaded the
-first time a selection needs them and then kept, without a limit.
+cell, so the load path is the one of ``materialize_df``: ``read_csv`` of the
+bytes, passed to the view as a frame. The frame of a cell is loaded the first
+time a selection needs it and then kept, without a limit.
 
 Run with:
     panel serve examples/dev/battery_dashboard_multistage.py
@@ -18,7 +18,7 @@ Hierarchy:
     Procedures:  ElectrochemicalTestProcedure -> AgingTestProcedure
                      -> one procedure per first stage C-rate
 
-The time of each load (file read, ``read_csv``, ``from_df``), of each
+The time of each load (file read, ``read_csv``), of each
 ``datasets()`` call and of each plot rendering is printed to the console and
 written to the log card of the view.
 """
@@ -35,7 +35,6 @@ from typing import Any, Dict, List, Tuple
 import panel as pn
 
 from opensemantic.base import _pint_csv
-from opensemantic.batteries import CyclingDatasetController
 from opensemantic.batteries.v1 import CyclingDataRow
 from opensemantic.batteries.view import (
     BatteryDataBackend,
@@ -83,8 +82,8 @@ class MultistageBatteryBackend(BatteryDataBackend):
             self._procedures[proc_iri] = entry["procedure"]
             self._cell_procedure[cell_iri] = proc_iri
         self._procedures = dict(sorted(self._procedures.items()))
-        # cell iri -> rows, loaded on first selection and never evicted
-        self._rows: Dict[str, List[CyclingDataRow]] = {}
+        # cell iri -> frame, loaded on first selection and never evicted
+        self._frames: Dict[str, Any] = {}
 
     @property
     def row_class(self) -> type:
@@ -119,25 +118,23 @@ class MultistageBatteryBackend(BatteryDataBackend):
             ]
         return []
 
-    def _load(self, cell_iri: str) -> List[CyclingDataRow]:
-        """Rows of a cell, read once the way ``materialize_data`` reads CSV."""
-        if cell_iri in self._rows:
-            return self._rows[cell_iri]
+    def _load(self, cell_iri: str):
+        """Frame of a cell, read once the way ``materialize_df`` reads CSV."""
+        if cell_iri in self._frames:
+            return self._frames[cell_iri]
         label, entry = self._cells[cell_iri]
         began = time.perf_counter()
         payload = (self._dir / entry["file"]).read_bytes()
         t_read = time.perf_counter()
         frame = _pint_csv.read_csv(payload)
         t_csv = time.perf_counter()
-        rows = CyclingDatasetController.from_df(frame, label=label).data
-        t_rows = time.perf_counter()
-        self._rows[cell_iri] = rows
+        self._frames[cell_iri] = frame
         _report(
             f"load {label}: file read {t_read - began:.2f} s, "
-            f"read_csv {t_csv - t_read:.2f} s, from_df {t_rows - t_csv:.2f} s, "
-            f"total {t_rows - began:.2f} s, {len(rows)} rows"
+            f"read_csv {t_csv - t_read:.2f} s, "
+            f"total {t_csv - began:.2f} s, {len(frame)} rows"
         )
-        return rows
+        return frame
 
     def datasets(self, cell_iris: List[str], proc_iris: List[str]) -> List[Dataset]:
         began = time.perf_counter()
@@ -151,7 +148,7 @@ class MultistageBatteryBackend(BatteryDataBackend):
                 Dataset(
                     id=f"{cell_iri}|{proc_iri}",
                     label=f"{label} - {self._procedures[proc_iri]}",
-                    rows=self._load(cell_iri),
+                    df=self._load(cell_iri),
                     cell_iri=cell_iri,
                     procedure_iri=proc_iri,
                 )
