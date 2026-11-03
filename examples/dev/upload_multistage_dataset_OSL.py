@@ -104,6 +104,27 @@ UPLOAD_CHUNK_SIZE = 2**31 - 1  # the dev wiki's maxuploadsize
 # rows built as CyclingDataRow when a --csv file is uploaded as it is
 SAMPLE_ROWS = 10_000
 
+# Added to the description of every stored entity. The data is licensed under
+# CC BY 4.0, which asks for attribution and a note on the changes.
+SOURCE_TEXT = (
+    "Source: Ye Yuan, Guijun Ma, Songpei Xu (2022). The Dataset for: Real-time "
+    "personalized health status prediction of lithium-ion batteries using deep "
+    "transfer learning. Mendeley Data, version 2. "
+    "https://doi.org/10.17632/nsc7hnsg4s.2, license CC BY 4.0. "
+    "Original publication: G. Ma, S. Xu, B. Jiang, C. Cheng, X. Yang, Y. Shen, "
+    "T. Yang, Y. Huang, H. Ding, Y. Yuan. Real-time personalized health status "
+    "prediction of lithium-ion batteries using deep transfer learning. Energy "
+    "Environ. Sci. 15 (2022) 4083-4094. https://doi.org/10.1039/d2ee01676a. "
+    "Changes: converted from the original pickle files into CyclingDataRow "
+    "fields with a continuous test time, cycle numbers from 0, a step type and "
+    "a capacity that restarts when the step type changes."
+)
+
+
+def source_description() -> Description:
+    return Description(text=SOURCE_TEXT, lang="en")
+
+
 NOMINAL_CAPACITY_AH = 1.1
 GAP_SECONDS = 5.0  # added between the last point of a cycle and the next cycle
 
@@ -405,6 +426,7 @@ def build_entities(cell_id: str, c_rate: int):
     cell = CylindricalCell(
         uuid=uuid.uuid5(NAMESPACE, f"cell:{cell_id}"),
         label=[Label(text=f"Cell {cell_id}")],
+        description=[source_description()],
     )
     amps = c_rate * NOMINAL_CAPACITY_AH
     name = f"Multi-stage discharge aging, {c_rate}C first stage"
@@ -418,7 +440,8 @@ def build_entities(cell_id: str, c_rate: int):
                     f"discharge stages: the first at {c_rate}C ({amps:.1f} A), "
                     "the last at 2C down to about 1.95 V."
                 )
-            )
+            ),
+            source_description(),
         ],
     )
     return cell, procedure, name
@@ -428,6 +451,7 @@ def build_test(cell, procedure, name, cell_id, dataset) -> ElectrochemicalTest:
     return ElectrochemicalTest(
         uuid=uuid.uuid5(NAMESPACE, f"test:{cell_id}"),
         label=[Label(text=f"Cell {cell_id} - {name}")],
+        description=[source_description()],
         device_under_test=[cell.get_iri()],
         test_procedure=[
             TestProcedureItem(
@@ -508,11 +532,17 @@ def main() -> None:
         if payload is not None:
             check_sample(frame, payload, dataset_label)
             dataset = CyclingDatasetController.from_df(
-                frame.iloc[:0], uuid=dataset_uuid, label=dataset_label
+                frame.iloc[:0],
+                uuid=dataset_uuid,
+                label=dataset_label,
+                description=[source_description()],
             )
         else:
             dataset = CyclingDatasetController.from_df(
-                frame, uuid=dataset_uuid, label=dataset_label
+                frame,
+                uuid=dataset_uuid,
+                label=dataset_label,
+                description=[source_description()],
             )
             print(f"Built {len(dataset.data)} rows")
     del frame
@@ -560,6 +590,7 @@ def main() -> None:
     wiki_file = RerunWikiFileController(
         uuid=uuid.uuid5(NAMESPACE, f"file:{cell_id}:{args.format}"),
         label=dataset.label,
+        description=[source_description()],
         name=f"cycling_data.{args.format}",
         osw=osw_obj,
     )
