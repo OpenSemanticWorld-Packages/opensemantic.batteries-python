@@ -27,7 +27,7 @@ from typing import Dict, List, Tuple
 
 import panel as pn
 
-from opensemantic.batteries import read_maccor
+from opensemantic.batteries import CyclingDatasetController, read_maccor
 from opensemantic.batteries.v1 import CyclingDataRow
 from opensemantic.batteries.view import (
     BatteryDataBackend,
@@ -44,9 +44,10 @@ _MACCOR_DIR = (
 
 
 @lru_cache(maxsize=None)
-def _rows(path: Path) -> List[CyclingDataRow]:
-    """Read a Maccor file; its rows are already ``CyclingDataRow``."""
-    return read_maccor(path, fmt="mims_client1").data
+def _df(path: Path):
+    """Read a Maccor file as a frame with units, the form the view plots."""
+    dataset = read_maccor(path, fmt="mims_client1")
+    return dataset.cast(CyclingDatasetController).to_df()
 
 
 class MaccorBatteryBackend(BatteryDataBackend):
@@ -120,7 +121,7 @@ class MaccorBatteryBackend(BatteryDataBackend):
                         Dataset(
                             id=f"{c}|{p}",
                             label=f"{self.page_name(c)} - {self.page_name(p)}",
-                            rows=_rows(path),
+                            df=_df(path),
                             cell_iri=c,
                             procedure_iri=p,
                         )

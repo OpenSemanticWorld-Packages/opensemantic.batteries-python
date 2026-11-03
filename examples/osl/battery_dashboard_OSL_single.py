@@ -115,7 +115,7 @@ class SingleEntityBackend(OSLBatteryBackend):
             Dataset(
                 id=title,
                 label=self.page_name(title),
-                rows=self._rows_for(title),
+                df=self._df_for(title),
                 cell_iri=cell,
                 procedure_iri=procedure,
             )
