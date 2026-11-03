@@ -8,8 +8,8 @@
 *.orig
 *.log
 *.pot
-__pycache__/*
-.cache/*
+__pycache__/
+.cache/
 .*.swp
 */.ipynb_checkpoints/*
 .DS_Store
@@ -52,3 +52,11 @@ MANIFEST
 .venv*/
 .conda*/
 .python-version
+# exclude secrets
+*.pwd.yaml
+#exclude databases used for testing
+*.sqlite
+
+# transient artifacts from docs/media/generate_battery_dashboard*.py
+docs/media/_gen_server_*.log
+docs/media/_frame_*.png

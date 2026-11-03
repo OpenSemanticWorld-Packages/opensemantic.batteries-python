@@ -1,18 +1,10 @@
 # opensemantic.batteries
 
-Library with Python models derived from the page package world.opensemantic.batteries
-
-
-## Note
-
-> This is the main page of your project's [Sphinx] documentation. It is
-> formatted in [Markdown]. Add additional pages by creating md-files in
-> `docs` or rst-files (formatted in [reStructuredText]) and adding links to
-> them in the `Contents` section below.
->
-> Please check [Sphinx] and [MyST] for more information
-> about how to document your project and how to configure your preferences.
-
+`opensemantic.batteries` provides Python models derived from the page package
+`world.opensemantic.batteries`: cells, materials, tests, procedures and devices.
+It also contains a typed, unit-aware cycling data model with importers for
+cycler files (Maccor) and an interactive dashboard to plot cycling data from an
+OpenSemanticLab wiki.
 
 ## Contents
 
@@ -32,8 +24,3 @@ Module Reference <api/modules>
 * {ref}`genindex`
 * {ref}`modindex`
 * {ref}`search`
-
-[Sphinx]: http://www.sphinx-doc.org/
-[Markdown]: https://daringfireball.net/projects/markdown/
-[reStructuredText]: http://www.sphinx-doc.org/en/master/usage/restructuredtext/basics.html
-[MyST]: https://myst-parser.readthedocs.io/en/latest/

@@ -16,12 +16,31 @@ try:
 except ImportError:
     pass
 
-from opensemantic.batteries._dataset import (  # noqa: F401
-    BatteryCyclingDataset,
-    CyclingDataRow,
-)
-from opensemantic.batteries._importers import (  # noqa: F401
-    CyclerImporter,
-    MaccorImporter,
-    read_maccor,
-)
+# Cycling dataset + importers. Only the controller is re-exported here: it is
+# built on the v1 models (the layer the quantitative values of its rows belong
+# to), and importing its model classes as well would replace the v2 classes
+# that the star-import above put in this namespace.
+try:
+    from opensemantic.batteries._cycle_summary import (  # noqa: F401
+        CycleDataRow,
+        CycleSummaryDataset,
+        cycle_summary,
+    )
+    from opensemantic.batteries._cycling import (  # noqa: F401
+        CyclingDatasetController,
+        StepType,
+    )
+    from opensemantic.batteries._importers import (  # noqa: F401
+        CyclerImporter,
+        MaccorImporter,
+        read_maccor,
+    )
+except ImportError as _error:  # pragma: no cover - an optional dependency is missing
+    import logging as _logging
+
+    # info, not warning: the cycling extras are optional, so an install
+    # without them is supported - but a missing dependency must still be
+    # nameable
+    _logging.getLogger(__name__).info(
+        "opensemantic.batteries cycling support is unavailable: %s", _error
+    )

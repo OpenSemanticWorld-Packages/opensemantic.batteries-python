@@ -15,3 +15,7 @@ try:
     from opensemantic.batteries.v1._controller import *  # noqa
 except ImportError:
     pass
+
+# CyclingDatasetController is built on these v1 models but lives in
+# opensemantic.batteries: importing it here would re-enter this module while it
+# is still initializing.

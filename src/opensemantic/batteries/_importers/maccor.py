@@ -4,7 +4,8 @@
 comma, ``0d 00:00:0`` test-time, ...) and ``rename_columns(..., target=raw)``
 canonicalises the column names. This importer maps those canonical names to the
 unit-stripped ``CyclingDataRow`` field names and attaches pint units, then hands
-the DataFrame to ``BatteryCyclingDataset.from_df``.
+the DataFrame to ``CyclingDatasetController.from_df`` (via
+``CyclerImporter.read``).
 """
 
 from pathlib import Path
@@ -12,7 +13,7 @@ from typing import Dict, Optional, Tuple, Union
 
 import pandas as pd
 
-from .._dataset import BatteryCyclingDataset
+from .._cycling import ElectrochemicalCyclingDataset
 from .base import CyclerImporter
 
 # canonical (raw) Maccor column -> (stripped field name, pint unit string)
@@ -27,6 +28,13 @@ MACCOR_TO_FIELD: Dict[str, Tuple[str, str]] = {
     "Energy": ("energy", "watt_hour"),
 }
 
+# Maccor "Mode" code -> step_type value; any other non-empty code is OTHER
+MACCOR_MODE_TO_STEP_TYPE: Dict[str, str] = {
+    "R": "REST",
+    "C": "CCCV_CHG",
+    "D": "CC_DCH",
+}
+
 # filename hint -> maccor-utility format key
 _FORMAT_BY_HINT = {
     "export1": "maccor_export1",
@@ -35,6 +43,16 @@ _FORMAT_BY_HINT = {
     "mims_client2": "mims_client2",
     "mims_server2": "mims_server2",
 }
+
+
+def _step_type_of(value) -> Optional[str]:
+    """Map a Maccor ``Mode`` cell to a ``step_type`` value (None if empty)."""
+    if value is None or pd.isna(value):
+        return None
+    code = str(value).strip().upper()
+    if not code:
+        return None
+    return MACCOR_MODE_TO_STEP_TYPE.get(code, "OTHER")
 
 
 class MaccorImporter(CyclerImporter):
@@ -87,13 +105,17 @@ class MaccorImporter(CyclerImporter):
                 # maccor-utility already parses duration time columns to seconds
                 values = pd.to_numeric(canonical[src], errors="coerce").astype(float)
                 columns[field] = pd.Series(values.values, dtype=f"pint[{unit}]")
+        if "Mode" in canonical.columns:
+            columns["step_type"] = pd.Series(
+                [_step_type_of(v) for v in canonical["Mode"]], dtype=object
+            )
         return pd.DataFrame(columns)
 
 
 def read_maccor(
     path: Union[str, Path], fmt: Optional[str] = None
-) -> BatteryCyclingDataset:
-    """Read a Maccor export file into a ``BatteryCyclingDataset``.
+) -> ElectrochemicalCyclingDataset:
+    """Read a Maccor export file into an ``ElectrochemicalCyclingDataset``.
 
     ``fmt`` is the maccor-utility format (or its name); if omitted it is
     detected from the filename.

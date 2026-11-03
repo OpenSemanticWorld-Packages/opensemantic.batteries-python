@@ -1,0 +1,186 @@
+"""Minimal cycling-data example following schema_addon conventions.
+
+Every class comes from ``opensemantic.batteries.v1``: the schema package
+defines the cycling row and dataset as well as the cell form factors, so this
+module only builds instances.
+"""
+
+from __future__ import annotations
+
+import random
+from typing import List
+
+from opensemantic.batteries.v1 import (  # noqa: F401 (re-exported to the examples)
+    AgingTestProcedure,
+    CyclingDataRow,
+    CylindricalCell,
+    ElectrochemicalCyclingDataset,
+    ElectrochemicalTest,
+    ElectrochemicalTestProcedure,
+    FormationTestProcedure,
+    PrismaticCell,
+    TestProcedureItem,
+)
+from opensemantic.characteristics.quantitative.v1 import (
+    Count,
+    ElectricCharge,
+    ElectricCurrent,
+    Time,
+    Voltage,
+)
+from opensemantic.core.v1 import Label
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _sample_cycling_data() -> List[CyclingDataRow]:
+    """Five rows of a toy charge profile spanning two cycles.
+
+    ``cycle_count`` rolls over from 0 to 1 at the middle row, and ``capacity``
+    accumulates the charge passed (``Q += I·Δt``) within each cycle, resetting to
+    zero when the new cycle starts — so the two optional columns stay physically
+    sensible.
+    """
+    # (test_time [h], voltage [V], current [A]) base profile.
+    base = [
+        (0.0, 3.0, 0.0),
+        (1.0, 3.1, 0.5),
+        (2.0, 3.2, 0.5),
+        (3.0, 3.3, 0.5),
+        (4.0, 3.1, 0.0),
+    ]
+    mid = len(base) // 2  # cycle count increases 0 -> 1 in the middle
+
+    rows: List[CyclingDataRow] = []
+    capacity = 0.0
+    prev_cycle = 0
+    prev_time = 0.0
+    for i, (t, v, c) in enumerate(base):
+        cycle = 0 if i < mid else 1
+        if cycle != prev_cycle:
+            capacity = 0.0  # new cycle: accumulated charge restarts
+            prev_cycle = cycle
+        current = c + random.uniform(-0.1, 0.1)
+        capacity += max(current, 0.0) * (t - prev_time)  # Q += I·Δt (Ah)
+        prev_time = t
+        rows.append(
+            CyclingDataRow(
+                test_time=Time(value=t),
+                voltage=Voltage(value=v + random.uniform(-0.3, 0.3)),
+                current=ElectricCurrent(value=current),
+                cycle_count=Count(value=cycle),
+                capacity=ElectricCharge(value=round(capacity, 4)),
+            )
+        )
+    return rows
+
+
+def _make_dataset(name: str) -> List[ElectrochemicalCyclingDataset]:
+    # The generated ``ElectrochemicalTest.output`` is a *list* of datasets.
+    return [
+        ElectrochemicalCyclingDataset(
+            label=[Label(text=name)],
+            data=_sample_cycling_data(),
+        )
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Cells
+# ---------------------------------------------------------------------------
+
+cell_a = CylindricalCell(label=[Label(text="Cell A")])
+cell_b = CylindricalCell(label=[Label(text="Cell B")])
+cell_c = PrismaticCell(label=[Label(text="Cell C")])
+
+
+# ---------------------------------------------------------------------------
+# Procedures (protocol instances)
+# ---------------------------------------------------------------------------
+
+aging_test_a = AgingTestProcedure(label=[Label(text="Aging Test A")])
+aging_test_b = AgingTestProcedure(label=[Label(text="Aging Test B")])
+formation_procedure = FormationTestProcedure(label=[Label(text="Formation Test")])
+
+
+# ``test_procedure_instance`` is a string instance reference
+# (an OSW IRI like ``Item:OSW…``), not the procedure object — so link each
+# procedure by its ``get_iri()``. The dashboard resolves the IRI back to the
+# procedure object via its procedure_objects map (see BatteryDataView).
+test_procedure_aging_test_a = [
+    TestProcedureItem(
+        test_procedure_subcategory="Category:OSWdda41d4a4ec0421babe0295c6edcb5df",
+        test_procedure_instance=aging_test_a.get_iri(),
+        test_procedure_instance_property="Property:HasProcedure",
+    )
+]
+
+
+test_procedure_aging_test_b = [
+    TestProcedureItem(
+        test_procedure_subcategory="Category:OSWdda41d4a4ec0421babe0295c6edcb5df",
+        test_procedure_instance=aging_test_b.get_iri(),
+        test_procedure_instance_property="Property:HasProcedure",
+    )
+]
+
+
+test_procedure_formation_procedure = [
+    TestProcedureItem(
+        test_procedure_subcategory="Category:OSWdda41d4a4ec0421babe0295c6edcb5df",
+        test_procedure_instance=formation_procedure.get_iri(),
+        test_procedure_instance_property="Property:HasProcedure",
+    )
+]
+
+
+# ---------------------------------------------------------------------------
+# Test runs
+# ---------------------------------------------------------------------------
+
+# Cell A: AgingTestA + Formation
+test_cell_a_aging_a = ElectrochemicalTest(
+    label=[Label(text="Cell A - Aging (A)")],
+    device_under_test=[cell_a],
+    test_procedure=test_procedure_aging_test_a,
+    output=_make_dataset("Cell A - Aging (A) Dataset"),
+)
+
+test_cell_a_formation = ElectrochemicalTest(
+    label=[Label(text="Cell A - Formation")],
+    device_under_test=[cell_a],
+    test_procedure=test_procedure_formation_procedure,
+    output=_make_dataset("Cell A - Formation Dataset"),
+)
+
+# Cell B: AgingTestA + AgingTestB + Formation
+test_cell_b_aging_a = ElectrochemicalTest(
+    label=[Label(text="Cell B - Aging (A)")],
+    device_under_test=[cell_b],
+    test_procedure=test_procedure_aging_test_a,
+    output=_make_dataset("Cell B - Aging (A) Dataset"),
+)
+
+test_cell_b_aging_b = ElectrochemicalTest(
+    label=[Label(text="Cell B - Aging (B)")],
+    device_under_test=[cell_b],
+    test_procedure=test_procedure_aging_test_b,
+    output=_make_dataset("Cell B - Aging (B) Dataset"),
+)
+
+test_cell_b_formation = ElectrochemicalTest(
+    label=[Label(text="Cell B - Formation")],
+    device_under_test=[cell_b],
+    test_procedure=test_procedure_formation_procedure,
+    output=_make_dataset("Cell B - Formation Dataset"),
+)
+
+# Cell C: Formation only
+test_cell_c_formation = ElectrochemicalTest(
+    label=[Label(text="Cell C - Formation")],
+    device_under_test=[cell_c],
+    test_procedure=test_procedure_formation_procedure,
+    output=_make_dataset("Cell C - Formation Dataset"),
+)

@@ -60,7 +60,7 @@ jobs:
     strategy:
       matrix:
         python:
-        - "3.10"  # oldest Python supported by PSF
+        - "3.11"  # oldest Python the dependencies support
         - "3.13"  # newest Python that is stable
         platform:
         - ubuntu-latest
@@ -109,6 +109,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # the OIDC token the trusted publisher on PyPI is configured against
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -116,12 +118,9 @@ jobs:
       - name: Retrieve pre-built distribution files
         uses: actions/download-artifact@v4
         with: {name: python-distribution-files, path: dist/}
+      - name: Check the distribution files
+        run: pipx run twine check dist/*
       - name: Publish Package
-        env:
-          # TODO: Set your PYPI_TOKEN as a secret using GitHub UI
-          # - https://pypi.org/help/#apitoken
-          # - https://docs.github.com/en/actions/security-guides/encrypted-secrets
-          TWINE_REPOSITORY: pypi
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: pipx run tox -e publish
+        # trusted publishing: the action exchanges the job's OIDC token for an
+        # upload token, so there is no API token to hold
+        uses: pypa/gh-action-pypi-publish@release/v1
