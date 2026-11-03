@@ -46,12 +46,12 @@ from opensemantic.batteries.v1 import (
     ElectrochemicalTest,
     ElectrochemicalTestProcedure,
 )
-from opensemantic.batteries.view._frame_cache import FrameCache, fingerprint_of
 from opensemantic.batteries.view._backend import (
     BatteryDataBackend,
     Dataset,
     TreeNode,
 )
+from opensemantic.batteries.view._frame_cache import FrameCache, fingerprint_of
 
 _UNSET = object()
 """Tells "no cache_dir given" from an explicit ``None``, which disables it."""
