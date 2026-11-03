@@ -73,8 +73,13 @@ class _FakeOsw:
         return SimpleNamespace(data=[1, 2, 3])
 
 
-def _backend(osw: _FakeOsw) -> OSLBatteryBackend:
-    return OSLBatteryBackend(osw_obj=osw, row_class=object, disjunctive_query=True)
+def _backend(osw: _FakeOsw, cache_dir=None) -> OSLBatteryBackend:
+    return OSLBatteryBackend(
+        osw_obj=osw,
+        row_class=object,
+        disjunctive_query=True,
+        cache_dir=cache_dir,
+    )
 
 
 def _messages(caplog, level: int) -> List[str]:
@@ -206,3 +211,17 @@ def test_many_titles_use_several_ask_calls():
     assert len(backend.datasets(["Item:C1"], ["Item:P1"])) == 120
     assert len(osw.site.ask_queries) == 3  # 50 + 50 + 20
     assert all(q.count("Item:D") <= 50 for q in osw.site.ask_queries)
+
+
+def test_a_second_load_comes_from_the_disk_cache(caplog, tmp_path):
+    """A restart must not re-download what it already has."""
+    caplog.set_level(logging.INFO, logger=LOGGER)
+    backend = _backend(_FakeOsw(), cache_dir=tmp_path / "frames")
+    backend._df_for("Item:D1")
+
+    fresh = _backend(_FakeOsw(), cache_dir=tmp_path / "frames")
+    fresh._df_for("Item:D1")
+
+    messages = _messages(caplog, logging.INFO)
+    assert any("source inline, downloaded" in m for m in messages)
+    assert any("source inline, cached" in m for m in messages)
