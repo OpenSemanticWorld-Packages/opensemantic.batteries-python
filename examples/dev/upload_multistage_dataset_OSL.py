@@ -7,11 +7,12 @@ charge, a CC-CV charge and four CC discharge stages. The script
 
 1. loads the pickle with a restricted unpickler (pandas, numpy and ``slice``
    only),
-2. parses the cycles into ``CyclingDataRow`` rows with a continuous
-   test time, cycle numbers from 0, ``step_type`` and a capacity that is reset
-   only when the step type changes (the four discharge stages form one counter),
-3. validates the rows and compares the per-cycle discharge capacity from
-   ``cycle_summary`` with the source ``dq`` values,
+2. parses the cycles into a frame of ``CyclingDataRow`` fields with a
+   continuous test time, cycle numbers from 0, ``step_type`` and a capacity
+   that is reset only when the step type changes (the four discharge stages
+   form one counter),
+3. validates the frame column-wise and compares the per-cycle discharge
+   capacity from ``cycle_summary`` with the source ``dq`` values,
 4. builds a ``CylindricalCell``, an ``AgingTestProcedure`` (one per first
    discharge stage C-rate) and an ``ElectrochemicalTest``. The UUIDs of all
    entities, the dataset and its WikiFile are derived from fixed names, so a
@@ -25,7 +26,13 @@ Without ``--store`` nothing is written: the dataset is serialized and parsed
 back offline and the time per phase and the peak memory are printed. With
 ``--store`` the entities are stored in the order cell, procedure, dataset
 (rows externalized to a WikiFile as in ``upload_large_dataset_OSL.py``), test,
-and the rows are read back with ``materialize_data``.
+and the file is read back with ``materialize_df`` to compare the row count.
+
+With ``--csv`` and ``--format csv`` the CSV file is uploaded as it is. Only a
+sample of rows is built as ``CyclingDataRow``: the first ``SAMPLE_ROWS`` rows,
+which must serialize to the same bytes as the start of the file, and
+``SAMPLE_ROWS`` rows spread over the whole file. Building every row takes
+about two minutes per million rows and only reproduces the file.
 
 Run from the ``examples/dev`` directory, after filling in
 ``examples/accounts.pwd.yaml``::
@@ -49,7 +56,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 import mwclient.errors
 import numpy as np
@@ -61,15 +68,21 @@ from osw.defaults import paths as default_paths
 from osw.express import OswExpress
 
 from opensemantic.base import _pint_csv
-from opensemantic.base._dataset_controller_mixin import row_class_of
+from opensemantic.base._dataset_controller_mixin import (
+    CSV_MEDIA_TYPE,
+    _field_type,
+    _file_url,
+    _NamedBytesIO,
+    row_class_of,
+)
 from opensemantic.batteries import CyclingDatasetController, StepType, cycle_summary
 from opensemantic.batteries.v1 import (
     AgingTestProcedure,
-    CyclingDataRow,
     CylindricalCell,
     ElectrochemicalTest,
     TestProcedureItem,
 )
+from opensemantic.core import get_file_controller
 from opensemantic.core.v1 import Description, Label
 
 WIKI_DOMAIN = "wiki-dev.open-semantic-lab.org"
@@ -87,6 +100,9 @@ NAMESPACE = uuid.UUID("6f1d3c0e-8a52-4b7e-9d41-2c5a7b9e0f13")
 SKIPPED_CELLS = {"4-5", "9-5", "9-7"}
 
 UPLOAD_CHUNK_SIZE = 2**31 - 1  # the dev wiki's maxuploadsize
+
+# rows built as CyclingDataRow when a --csv file is uploaded as it is
+SAMPLE_ROWS = 10_000
 
 NOMINAL_CAPACITY_AH = 1.1
 GAP_SECONDS = 5.0  # added between the last point of a cycle and the next cycle
@@ -232,8 +248,12 @@ def build_frame(cycles: Dict[int, pd.DataFrame], max_cycles: Optional[int]):
     )
 
 
-def validate(rows: List[CyclingDataRow]) -> None:
-    """Raise ``ValueError`` on the first violated rule."""
+def validate(frame: pd.DataFrame) -> None:
+    """Raise ``ValueError`` on a violated rule, checked column-wise.
+
+    The message names the first row of the first rule that fails. Rows are
+    counted from 0 in file order.
+    """
     required = [
         "voltage",
         "current",
@@ -242,48 +262,113 @@ def validate(rows: List[CyclingDataRow]) -> None:
         "cycle_count",
         "step_type",
     ]
-    if not rows:
+    if frame.empty:
         raise ValueError("no rows")
-    previous = None
-    segment_last_capacity = None  # capacity of the last row of the prior segment
-    for i, row in enumerate(rows):
-        for field in required:
-            value = getattr(row, field, None)
-            if value is None or (hasattr(value, "value") and value.value is None):
-                raise ValueError(f"row {i}: missing {field}")
-        capacity = row.capacity.to_pint().to("milliampere_hour").magnitude
-        if capacity < 0:
-            raise ValueError(f"row {i}: negative capacity {capacity}")
-        time_s = row.test_time.to_pint().to("second").magnitude
-        cycle = row.cycle_count.value
-        if previous is None:
-            if cycle != 0:
-                raise ValueError(f"first cycle_count is {cycle}, expected 0")
-        else:
-            p_time, p_cycle, p_step, p_capacity = previous
-            if time_s <= p_time:
-                raise ValueError(f"row {i}: test_time {time_s} <= {p_time}")
-            if cycle not in (p_cycle, p_cycle + 1):
-                raise ValueError(f"row {i}: cycle {cycle} after {p_cycle}")
-            if row.step_type != p_step:
-                segment_last_capacity = p_capacity
-                if not (capacity < segment_last_capacity or capacity < 1.0):
-                    raise ValueError(
-                        f"row {i}: capacity {capacity} at a new segment is not "
-                        f"below {segment_last_capacity} and not near 0"
-                    )
-        previous = (time_s, cycle, row.step_type, capacity)
+    for field in required:
+        if field not in frame.columns:
+            raise ValueError(f"missing column {field}")
+        missing = np.flatnonzero(frame[field].isna().to_numpy())
+        if missing.size:
+            raise ValueError(f"row {missing[0]}: missing {field}")
+
+    def magnitudes(field: str, unit: str) -> np.ndarray:
+        return frame[field].pint.to(unit).pint.magnitude.to_numpy(dtype=float)
+
+    def first(mask: np.ndarray, message) -> None:
+        hits = np.flatnonzero(mask)
+        if hits.size:
+            raise ValueError(message(hits[0]))
+
+    capacity = magnitudes("capacity", "milliampere_hour")
+    time_s = magnitudes("test_time", "second")
+    cycle = magnitudes("cycle_count", "dimensionless")
+    step = frame["step_type"].to_numpy()
+
+    first(capacity < 0, lambda i: f"row {i}: negative capacity {capacity[i]}")
+    if cycle[0] != 0:
+        raise ValueError(f"first cycle_count is {cycle[0]}, expected 0")
+    # rule for row i + 1 against its predecessor i
+    first(
+        np.diff(time_s) <= 0,
+        lambda i: f"row {i + 1}: test_time {time_s[i + 1]} <= {time_s[i]}",
+    )
+    cycle_step = np.diff(cycle)
+    first(
+        (cycle_step != 0) & (cycle_step != 1),
+        lambda i: f"row {i + 1}: cycle {cycle[i + 1]} after {cycle[i]}",
+    )
+    # at a new segment the capacity starts below the last capacity of the
+    # prior segment or near 0
+    new_segment = step[1:] != step[:-1]
+    reset = (capacity[1:] < capacity[:-1]) | (capacity[1:] < 1.0)
+    first(
+        new_segment & ~reset,
+        lambda i: (
+            f"row {i + 1}: capacity {capacity[i + 1]} at a new segment is not "
+            f"below {capacity[i]} and not near 0"
+        ),
+    )
+
+
+def check_sample(frame: pd.DataFrame, raw: bytes, label: str) -> None:
+    """Build a sample of rows and check that ``raw`` is their CSV format.
+
+    The first ``SAMPLE_ROWS`` rows go through ``CyclingDataRow`` and are
+    serialized again; the result must be the same bytes as the start of
+    ``raw``, the CSV file that is uploaded as it is. Another ``SAMPLE_ROWS``
+    rows spread over the whole frame go through ``CyclingDataRow`` as well.
+    """
+    head = CyclingDatasetController.from_df(frame.iloc[:SAMPLE_ROWS], label=label)
+    # two header lines (field, unit), then one line per row
+    lines = raw.split(b"\n", len(head.data) + 2)
+    expected = b"\n".join(lines[: len(head.data) + 2]) + b"\n"
+    if head.serialize_data("csv") != expected:
+        raise ValueError(
+            f"the first {len(head.data)} rows of the CSV file do not serialize "
+            "to the same bytes; run without --format csv to rebuild the file"
+        )
+    step = max(1, len(frame) // SAMPLE_ROWS)
+    spread = CyclingDatasetController.from_df(frame.iloc[::step], label=label)
+    print(
+        f"Sample check passed: first {len(head.data)} rows serialize to the same "
+        f"bytes, {len(spread.data)} rows (every {step}th) build as CyclingDataRow"
+    )
+
+
+def upload_bytes(dataset, file, payload: bytes, fmt: str):
+    """``externalize_data`` for rows that are already serialized.
+
+    ``externalize_data`` serializes ``dataset.data`` before the upload. A CSV
+    file that ``check_sample`` accepted is that serialization already, so it
+    is uploaded as it is. Attaches the distribution and clears ``data``.
+    """
+    controller = get_file_controller(file)
+    name = getattr(controller, "name", None) or f"data.{fmt}"
+    if not str(name).endswith(f".{fmt}"):
+        name = f"{name}.{fmt}"
+    controller.put(_NamedBytesIO(payload, str(name)))
+    distribution_cls = _field_type(type(dataset), "distributions")
+    distribution = distribution_cls(
+        file=controller,
+        media_type=CSV_MEDIA_TYPE,
+        byte_size=len(payload),
+        download_url=_file_url(controller),
+    )
+    dataset.distributions = list(dataset.distributions or []) + [distribution]
+    dataset.data = None
+    return distribution
 
 
 def check_dq(
-    rows, dq: Dict[int, float], max_cycles: Optional[int], partial: bool = False
+    data, dq: Dict[int, float], max_cycles: Optional[int], partial: bool = False
 ) -> float:
     """Compare ``cycle_summary`` discharge capacity (C -> mAh) with source dq.
 
+    ``data`` is the frame or the rows; ``cycle_summary`` reads either.
     With ``partial`` a cycle without discharge (cut off in a shortened CSV) is
     skipped and reported instead of raising.
     """
-    summary = cycle_summary(rows)
+    summary = cycle_summary(data)
     diffs = {}
     skipped = []
     for row in summary.data:
@@ -356,9 +441,9 @@ def build_test(cell, procedure, name, cell_id, dataset) -> ElectrochemicalTest:
 
 
 def parse_back(payload: bytes, dataset_cls, fmt: str, label) -> int:
-    """Parse serialized rows the way ``materialize_data`` does; return the count."""
+    """Parse serialized rows the way ``materialize_df`` does; return the count."""
     if fmt == "csv":
-        return len(dataset_cls.from_df(_pint_csv.read_csv(payload), label=label).data)
+        return len(_pint_csv.read_csv(payload))
     row_cls = row_class_of(dataset_cls)
     entries = json.loads(payload.decode("utf-8"))
     if isinstance(entries, dict):
@@ -399,41 +484,52 @@ def main() -> None:
     cell, procedure, procedure_name = build_entities(cell_id, c_rate)
     print(f"First discharge stage: {c_rate}C -> {procedure_name}")
 
+    raw = None
     with phase("frame", timings):
         if args.csv is not None:
             # the pickle still gives the C-rate and dq; the rows come from the CSV
-            frame = _pint_csv.read_csv(args.csv.read_bytes())
+            raw = args.csv.read_bytes()
+            frame = _pint_csv.read_csv(raw)
             print(f"Read {len(frame)} rows from {args.csv}")
         else:
             frame = build_frame(cycles, args.max_cycles)
-
-    with phase("rows", timings):
-        dataset = CyclingDatasetController.from_df(
-            frame,
-            uuid=uuid.uuid5(NAMESPACE, f"dataset:{cell_id}"),
-            label=f"Cell {cell_id} - {procedure_name} Dataset",
-        )
-        rows = dataset.data
-        print(f"Built {len(rows)} rows")
-    del frame
+    row_count = len(frame)
 
     with phase("validate", timings):
-        validate(rows)
+        validate(frame)
         print("Validation passed")
-        check_dq(rows, content["dq"], args.max_cycles, partial=args.csv is not None)
+        check_dq(frame, content["dq"], args.max_cycles, partial=args.csv is not None)
+
+    dataset_uuid = uuid.uuid5(NAMESPACE, f"dataset:{cell_id}")
+    dataset_label = f"Cell {cell_id} - {procedure_name} Dataset"
+    # the CSV file is uploaded as it is; JSON and the pickle need every row
+    payload = raw if raw is not None and args.format == "csv" else None
+    with phase("rows", timings):
+        if payload is not None:
+            check_sample(frame, payload, dataset_label)
+            dataset = CyclingDatasetController.from_df(
+                frame.iloc[:0], uuid=dataset_uuid, label=dataset_label
+            )
+        else:
+            dataset = CyclingDatasetController.from_df(
+                frame, uuid=dataset_uuid, label=dataset_label
+            )
+            print(f"Built {len(dataset.data)} rows")
+    del frame
 
     print(f"Cell {cell.get_iri()}, procedure {procedure.get_iri()}")
 
     if not args.store:
         test = build_test(cell, procedure, procedure_name, cell_id, dataset)
         print(f"Test label: {test.label[0].text}")
-        with phase("serialize", timings):
-            payload = dataset.serialize_data(args.format)
-            print(f"Serialized {args.format}: {len(payload) / 1e6:.1f} MB")
+        if payload is None:
+            with phase("serialize", timings):
+                payload = dataset.serialize_data(args.format)
+        print(f"Payload {args.format}: {len(payload) / 1e6:.1f} MB")
         with phase("parse back", timings):
             count = parse_back(payload, type(dataset), args.format, dataset.label)
-            print(f"Parsed back {count} rows (expected {len(rows)})")
-            if count != len(rows):
+            print(f"Parsed back {count} rows (expected {row_count})")
+            if count != row_count:
                 raise SystemExit("row count mismatch after parse back")
         peak = peak_memory_mb()
         print(f"Peak memory: {peak:.0f} MB" if peak else "Peak memory: unknown")
@@ -467,7 +563,10 @@ def main() -> None:
         name=f"cycling_data.{args.format}",
         osw=osw_obj,
     )
-    distribution = dataset.externalize_data(wiki_file, fmt=args.format)
+    if payload is not None:
+        distribution = upload_bytes(dataset, wiki_file, payload, args.format)
+    else:
+        distribution = dataset.externalize_data(wiki_file, fmt=args.format)
     # externalize_data passes no store options to the upload, which keeps an
     # existing file page unchanged, so write the file metadata again
     store(wiki_file.cast(osw_model.WikiFile), namespace=wiki_file.namespace)
@@ -482,8 +581,10 @@ def main() -> None:
     store(test)
     print(f"Stored test {test.get_iri()}")
 
-    rows_back = dataset.materialize_data()
-    print(f"Round trip: {len(rows_back)} rows materialized back")
+    count = len(dataset.materialize_df())
+    print(f"Round trip: {count} rows read back (expected {row_count})")
+    if count != row_count:
+        raise SystemExit("row count mismatch after the round trip")
 
 
 if __name__ == "__main__":
