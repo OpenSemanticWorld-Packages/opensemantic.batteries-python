@@ -212,4 +212,4 @@ def test_unit_selection_actually_converts_the_numbers(view):
 
     assert volts[0] == pytest.approx(3.0)
     assert millivolts[0] == pytest.approx(3000.0)
-    assert millivolts == [pytest.approx(v * 1000.0) for v in volts]
+    assert list(millivolts) == [pytest.approx(v * 1000.0) for v in volts]

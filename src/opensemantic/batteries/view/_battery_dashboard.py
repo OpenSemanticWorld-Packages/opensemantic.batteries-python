@@ -54,6 +54,7 @@ from enum import Enum
 from functools import partial
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import numpy as np
 import panel as pn
 from bokeh.models import (
     ColumnDataSource,
@@ -341,6 +342,9 @@ class BatteryDataView(BaseDataView):
     # room than a full tree: about 3/4 height, scrolling when there are many
     # matches.
     _INSTANCES_CARD_HEIGHT = _TREE_CARD_HEIGHT * 3 // 4
+    # A time-series selection with more rows than this in total is plotted
+    # only when the user presses "Plot large files".
+    LARGE_PLOT_ROWS = 100_000
 
     def __init__(
         self,
@@ -413,6 +417,9 @@ class BatteryDataView(BaseDataView):
         self._df_cache: Dict[Any, Tuple[List[Any], Any]] = {}
         # Cycle summary frame per trace, cached the same way
         self._cycle_cache: Dict[Any, Tuple[List[Any], Any]] = {}
+        # Trace keys of the last large time-series plot the user requested;
+        # a re-plot of the same traces does not ask again
+        self._large_plot_keys: frozenset = frozenset()
         # Batches: names in creation order, dataset key -> batch name (or
         # _NO_BATCH), and the rule ("cell" / "proc") of the last suggestion
         self._batch_names: List[str] = []
@@ -1168,11 +1175,12 @@ class BatteryDataView(BaseDataView):
         field: str,
         target_unit_name: Optional[str],
         char_cls: Optional[type],
-    ) -> Optional[List[Any]]:
+    ) -> Optional[Any]:
         """A trace column converted through pint, or ``None`` if unavailable.
 
-        A categorical field is not converted: its category strings are
-        returned (``None`` for a missing value).
+        A numeric field is returned as a float numpy array with NaN for a
+        missing value. A categorical field is not converted: its category
+        strings are returned as a list (``None`` for a missing value).
 
         Converting the whole column at once keeps the values in one Pydantic
         layer: the target unit is resolved to a pint string through the field's
@@ -1204,8 +1212,8 @@ class BatteryDataView(BaseDataView):
                     series = series.pint.to(to_pint_str(target_unit_name))
                 except Exception:  # noqa: BLE001 - bad unit: keep the raw column
                     pass
-        magnitudes = series.pint.magnitude
-        return [None if pd.isna(v) else float(v) for v in magnitudes]
+        magnitudes = pd.to_numeric(series.pint.magnitude, errors="coerce")
+        return magnitudes.to_numpy(dtype=float, na_value=np.nan)
 
     def _cached_trace_df(self, trace: Dict):
         """The trace's pint DataFrame, built once per rows list.
@@ -1272,12 +1280,15 @@ class BatteryDataView(BaseDataView):
 
     @staticmethod
     def _data_range(
-        per_trace: List[List[Optional[float]]],
+        per_trace: List[Any],
     ) -> Optional[Tuple[float, float]]:
-        flat = [v for trace_vals in per_trace for v in trace_vals if v is not None]
-        if not flat:
+        """The padded range over all traces; lists may hold ``None``."""
+        arrays = [np.asarray(v, dtype=float) for v in per_trace if len(v)]
+        flat = np.concatenate(arrays) if arrays else np.empty(0)
+        flat = flat[np.isfinite(flat)]
+        if not flat.size:
             return None
-        lo, hi = min(flat), max(flat)
+        lo, hi = float(flat.min()), float(flat.max())
         pad = (hi - lo) * 0.05 or 1.0
         return lo - pad, hi + pad
 
@@ -1294,8 +1305,13 @@ class BatteryDataView(BaseDataView):
             self._refresh_batches()
             self._build_batch_figure()
 
-    def _build_time_series_figure(self) -> None:
+    def _build_time_series_figure(self, force: bool = False) -> None:
         """Re-render the time-series plot from the current selection.
+
+        A selection with more than ``LARGE_PLOT_ROWS`` rows in total is not
+        plotted automatically: the card shows a "Plot large files" button,
+        which plots it with ``force=True``. Once requested, re-plots of the
+        same traces (a unit or axis change) do not ask again.
 
         Reassigning ``_plot_col.objects`` wholesale is what makes the
         browser pane refresh immediately (an in-place ``col[i] = x`` mutation
@@ -1303,6 +1319,30 @@ class BatteryDataView(BaseDataView):
         """
         if not hasattr(self, "_plot_col"):
             return  # _build_plot has not run yet
+        traces = self._resolve_traces()
+        keys = frozenset(t.get("key", t.get("label")) for t in traces)
+        rows = sum(
+            len(df) for df in map(self._cached_trace_df, traces) if df is not None
+        )
+        if force:
+            self._large_plot_keys = keys
+        elif rows > self.LARGE_PLOT_ROWS and keys != self._large_plot_keys:
+            self._log_plot(
+                "time-series plot", None, f"{rows} rows, waiting for request"
+            )
+            button = pn.widgets.Button(
+                name="Plot large files", button_type="primary", width=150
+            )
+            button.on_click(lambda _event: self._build_time_series_figure(force=True))
+            self._plot_col.objects = [
+                pn.pane.Markdown(
+                    f"_The selection has {rows:,} rows. Large plots are not "
+                    "drawn automatically._",
+                    margin=(10, 6),
+                ),
+                button,
+            ]
+            return
         fig = self._make_figure()
         self._log_plot("time-series plot", fig, "no data selected")
         self._plot_col.objects = [
@@ -1320,6 +1360,20 @@ class BatteryDataView(BaseDataView):
         """Replace each category string by its integer position (None stays)."""
         index = {c: i for i, c in enumerate(categories)}
         return [[index.get(v) for v in trace_vals] for trace_vals in per_trace]
+
+    @staticmethod
+    def _finite_pairs(xs: Any, ys: Any) -> Tuple[Any, Any]:
+        """The x and y float arrays without the points where either is missing.
+
+        Inputs are arrays with NaN or lists with ``None``; a dropped point
+        joins the line across it, as the plot did with Python lists.
+        """
+        x = np.asarray(xs, dtype=float)
+        y = np.asarray(ys, dtype=float)
+        n = min(x.size, y.size)
+        x, y = x[:n], y[:n]
+        keep = np.isfinite(x) & np.isfinite(y)
+        return x[keep], y[keep]
 
     @staticmethod
     def _set_category_ticks(axis, categories: List[str]) -> None:
@@ -1367,6 +1421,7 @@ class BatteryDataView(BaseDataView):
             x_range=Range1d(*x_rng),
             y_range=Range1d(*y1_rng),  # explicit range — 0 never forced
             tools="pan,wheel_zoom,box_zoom,reset,save",
+            output_backend="webgl",
         )
         if y1_cats:
             self._set_category_ticks(fig.yaxis[0], y1_cats)
@@ -1399,14 +1454,13 @@ class BatteryDataView(BaseDataView):
             y1s = y1s_all[i]
 
             # y1 (solid, left axis)
-            pairs = [(x, y) for x, y in zip(xs, y1s) if x is not None and y is not None]
-            if pairs:
-                xc, yc = zip(*pairs)
+            xc, yc = self._finite_pairs(xs, y1s)
+            if xc.size:
                 draw = partial(fig.step, mode="after") if y1_cats else fig.line
                 draw(
                     "x",
                     "y",
-                    source=ColumnDataSource({"x": list(xc), "y": list(yc)}),
+                    source=ColumnDataSource({"x": xc, "y": yc}),
                     legend_label=f"{trace['label']} ({y1_field})",
                     color=color,
                     line_width=2,
@@ -1415,16 +1469,13 @@ class BatteryDataView(BaseDataView):
             # y2 (dashed, right axis)
             if y2_active and y2s_all:
                 y2s = y2s_all[i]
-                pairs2 = [
-                    (x, y) for x, y in zip(xs, y2s) if x is not None and y is not None
-                ]
-                if pairs2:
-                    xc2, yc2 = zip(*pairs2)
+                xc2, yc2 = self._finite_pairs(xs, y2s)
+                if xc2.size:
                     draw2 = partial(fig.step, mode="after") if y2_cats else fig.line
                     draw2(
                         "x",
                         "y",
-                        source=ColumnDataSource({"x": list(xc2), "y": list(yc2)}),
+                        source=ColumnDataSource({"x": xc2, "y": yc2}),
                         legend_label=f"{trace['label']} ({y2_field})",
                         color=color,
                         line_width=2,
