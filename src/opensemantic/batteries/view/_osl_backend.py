@@ -53,6 +53,38 @@ from opensemantic.batteries.view._backend import (
 )
 from opensemantic.batteries.view._frame_cache import FrameCache, fingerprint_of
 
+_DIAGNOSTIC_LOCALS = ("result", "response", "data", "results", "json")
+"""Locals worth reporting from the frame an unexplained error came from."""
+
+
+def _diagnose(exc: BaseException, limit: int = 400) -> str:
+    """Where an exception came from and what the wiki had answered.
+
+    The retry loop around the wiki calls swallows an error whose origin is
+    not understood. Naming the frame it was raised in, and the response that
+    was being read there, is what turns the next occurrence into something
+    that can be fixed rather than retried.
+    """
+    tb = exc.__traceback__
+    deepest = None
+    while tb is not None:
+        deepest = tb
+        tb = tb.tb_next
+    if deepest is None:
+        return "no traceback"
+    frame = deepest.tb_frame
+    where = f"{frame.f_code.co_filename}:{deepest.tb_lineno} in {frame.f_code.co_name}"
+    seen = []
+    for name in _DIAGNOSTIC_LOCALS:
+        if name in frame.f_locals:
+            text = repr(frame.f_locals[name])
+            if len(text) > limit:
+                text = text[:limit] + "..."
+            seen.append(f"{name}={text}")
+    answered = "; ".join(seen) if seen else "no response in scope"
+    return f"raised at {where}; {answered}"
+
+
 _UNSET = object()
 """Tells "no cache_dir given" from an explicit ``None``, which disables it."""
 
@@ -367,14 +399,28 @@ class OSLBatteryBackend(BatteryDataBackend):
             try:
                 result = call()
             except AttributeError as exc:
-                # flaky zero-hit quirk - retry, then treat as empty
-                _log.debug(
-                    "%s retry %d/%d after AttributeError: %s",
-                    kind,
-                    attempt + 1,
-                    self._SEARCH_RETRIES,
-                    exc,
-                )
+                # The known cause was osw below 2.1.5, where a query without
+                # hits raised "'list' object has no attribute 'values'"
+                # because SMW serialises an empty result set as an array. The
+                # osl extra now requires 2.1.5, so this should no longer fire.
+                # It is kept as a net, and reports the frame it came from and
+                # what the wiki answered, so a different cause is diagnosable
+                # instead of being retried away.
+                if attempt == 0:
+                    _log.warning(
+                        "%s hit an AttributeError, retrying. %s",
+                        kind,
+                        _diagnose(exc),
+                        exc_info=True,
+                    )
+                else:
+                    _log.debug(
+                        "%s retry %d/%d after AttributeError: %s",
+                        kind,
+                        attempt + 1,
+                        self._SEARCH_RETRIES,
+                        exc,
+                    )
                 continue
             except Exception as exc:  # noqa: BLE001
                 _log.warning("%s failed: %s: %s", kind, query, exc)

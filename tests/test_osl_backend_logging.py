@@ -106,7 +106,12 @@ def test_attribute_error_is_retried_and_logged(caplog):
 
     backend = _backend(_FakeOsw(search_script=script))
     assert backend._search("q") == ["Item:D1"]
-    assert len([m for m in _messages(caplog, logging.DEBUG) if "retry" in m]) == 2
+    # the first is reported with its origin, the rest stay at debug
+    assert any(
+        "hit an AttributeError, retrying" in m
+        for m in _messages(caplog, logging.WARNING)
+    )
+    assert len([m for m in _messages(caplog, logging.DEBUG) if "retry" in m]) == 1
     assert any("2 retries" in m for m in _messages(caplog, logging.INFO))
 
 
@@ -225,3 +230,35 @@ def test_a_second_load_comes_from_the_disk_cache(caplog, tmp_path):
     messages = _messages(caplog, logging.INFO)
     assert any("source inline, downloaded" in m for m in messages)
     assert any("source inline, cached" in m for m in messages)
+
+
+def test_an_unexplained_attribute_error_is_reported_with_its_origin(caplog):
+    """The retry hides where it comes from; the first one has to say."""
+    caplog.set_level(logging.DEBUG, logger=LOGGER)
+    backend = _backend(_FakeOsw())
+    calls = {"n": 0}
+
+    def flaky():
+        calls["n"] += 1
+        if calls["n"] == 1:
+            result = {"query": {"results": {}}}
+            return result.missing  # the shape the wiki sometimes answers with
+        return ["Item:D1"]
+
+    assert backend._call_with_retries("query", "[[X]]", flaky) == ["Item:D1"]
+
+    warnings = _messages(caplog, logging.WARNING)
+    assert any("hit an AttributeError, retrying" in m for m in warnings)
+    assert any("raised at" in m and "result=" in m for m in warnings)
+
+
+def test_a_retry_that_never_clears_is_counted_as_a_failure(caplog):
+    caplog.set_level(logging.DEBUG, logger=LOGGER)
+    backend = _backend(_FakeOsw())
+
+    def always():
+        result = {}
+        return result.missing
+
+    assert backend._call_with_retries("query", "[[X]]", always) is None
+    assert backend.failed_queries == 1
