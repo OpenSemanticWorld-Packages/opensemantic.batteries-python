@@ -3,9 +3,9 @@
 Same behaviour as ``battery_dashboard_maccor.py``, but each cell is a
 multi-stage aging cell read from ``csv_osl`` (written by
 ``convert_multistage_to_csv.py``). The CSV is the file that OSL stores for the
-cell, so the load path is the one of ``materialize_data``: ``read_csv`` of the
-bytes, then ``from_df`` of the dataset class. The rows of a cell are loaded the
-first time a selection needs them and then kept, without a limit.
+cell, so the load path is the one of ``materialize_df``: ``read_csv`` of the
+bytes, passed to the view as a frame. The frame of a cell is loaded the first
+time a selection needs it and then kept, without a limit.
 
 Run with:
     panel serve examples/dev/battery_dashboard_multistage.py
@@ -18,7 +18,7 @@ Hierarchy:
     Procedures:  ElectrochemicalTestProcedure -> AgingTestProcedure
                      -> one procedure per first stage C-rate
 
-The time of each load (file read, ``read_csv``, ``from_df``), of each
+The time of each load (file read, ``read_csv``), of each
 ``datasets()`` call and of each plot rendering is printed to the console and
 written to the log card of the view.
 """
