@@ -12,6 +12,7 @@ OpenSemanticLab wiki.
 :maxdepth: 2
 
 Overview <readme>
+LLM upload prompt <llm_upload_prompt>
 Contributions & Help <contributing>
 License <license>
 Authors <authors>
