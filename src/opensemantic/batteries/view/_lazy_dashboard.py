@@ -280,9 +280,10 @@ class LazyBatteryDataView(BatteryDataView):
         """
         tree = Wunderbaum(
             source=[self._wb_node(which, root)],
-            columns=[{"id": "*", "title": col, "width": "220px"}],
+            columns=[{"id": "*", "title": col, "width": "*"}],
             options={"checkbox": True, "selectMode": "multi"},
             stylesheets=self._tree_stylesheets(self._TREE_CARD_HEIGHT),
+            sizing_mode="stretch_width",
             lazy_load_callback=lambda key, req, w=which: self._lazy_children(
                 w, key, req
             ),

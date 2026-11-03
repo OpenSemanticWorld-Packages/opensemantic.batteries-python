@@ -517,9 +517,10 @@ class BatteryDataView(BaseDataView):
         """
         tree = Wunderbaum(
             source=source,
-            columns=[{"id": "*", "title": title, "width": "220px"}],
+            columns=[{"id": "*", "title": title, "width": "*"}],
             options={"checkbox": True, "selectMode": "hier"},
             stylesheets=self._tree_stylesheets(self._TREE_CARD_HEIGHT),
+            sizing_mode="stretch_width",
         )
         tree.param.watch(self._on_tree_change, ["source"])
         return tree
@@ -877,9 +878,10 @@ class BatteryDataView(BaseDataView):
 
         self._instances_tree = Wunderbaum(
             source=source,
-            columns=[{"id": "*", "title": "Instance", "width": "220px"}],
+            columns=[{"id": "*", "title": "Instance", "width": "*"}],
             options={"checkbox": True, "selectMode": "multi"},
             stylesheets=self._tree_stylesheets(self._INSTANCES_CARD_HEIGHT),
+            sizing_mode="stretch_width",
         )
         # Read toggles from the echoed ``source``, NOT per-node ``select`` events:
         # a checkbox click fires click→deactivate→select→activate in one JS tick,

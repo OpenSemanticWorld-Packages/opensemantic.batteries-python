@@ -302,10 +302,16 @@ class OSLBatteryBackend(BatteryDataBackend):
         return titles
 
     def _ask_tests(self, titles: List[str]) -> Dict[str, Dict[str, Any]]:
-        """``{test title: printouts}`` of the tests that output one of titles."""
+        """``{test title: printouts}`` of the tests that output one of titles.
+
+        Each printout is named in the query (``?HasDut=HasDut``). Without a
+        name, SMW keys a printout by the property's label in the wiki's
+        language, for example ``HatAusgangsressource`` for ``HasOutput``.
+        """
         query = (
             f"[[HasOutput::{'||'.join(titles)}]]"
-            "|?HasDut|?HasProcedure|?HasOutput|limit=500"
+            "|?HasDut=HasDut|?HasProcedure=HasProcedure|?HasOutput=HasOutput"
+            "|limit=500"
         )
         response = self._call_with_retries(
             "ask",

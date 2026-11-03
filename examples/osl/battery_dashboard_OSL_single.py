@@ -15,6 +15,10 @@ Run from the repository root::
     panel serve examples/osl/battery_dashboard_OSL_single.py --dev
 
 Requires the ``osw`` package and ``examples/accounts.pwd.yaml``.
+
+The environment variable ``OSB_WIKI_DOMAIN`` selects the wiki (default
+``wiki-dev.open-semantic-lab.org``). ``DEFAULT_ID`` is a page on the dev wiki,
+so on another wiki enter an ID from that wiki.
 """
 
 import logging
@@ -42,6 +46,10 @@ DEFAULT_ID = "Item:OSWcdf15ab375155e6b82eca0bfb20f0a14"
 _ROOT = "Category:SingleEntity"
 
 DEFAULT_LOG_LEVEL = "INFO"
+
+# Wiki of the dashboard: set the environment variable OSB_WIKI_DOMAIN or change
+# this constant.
+DEFAULT_WIKI_DOMAIN = "wiki-dev.open-semantic-lab.org"
 
 logger = logging.getLogger("opensemantic.batteries.view")
 logger.setLevel(os.environ.get("OSB_VIEW_LOG", DEFAULT_LOG_LEVEL).upper())
@@ -156,7 +164,10 @@ class SingleEntityView(LazyBatteryDataView):
 
 backend = SingleEntityBackend(
     iri=DEFAULT_ID,
-    osw_obj=connect_osw(Path(__file__).resolve().parent.parent / "accounts.pwd.yaml"),
+    osw_obj=connect_osw(
+        Path(__file__).resolve().parent.parent / "accounts.pwd.yaml",
+        wiki_domain=os.environ.get("OSB_WIKI_DOMAIN", DEFAULT_WIKI_DOMAIN),
+    ),
     row_class=CyclingDataRow,
     field_names=[
         "test_time",

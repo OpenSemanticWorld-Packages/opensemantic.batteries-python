@@ -22,6 +22,10 @@ Requires the ``osw`` package (``pip install -e ".[osl]"``) and a credentials
 file in the parent folder (``examples/accounts.pwd.yaml``) — the same connection
 ``examples/osl/osl_queries.py`` runs. Without them the dashboard still builds; the trees
 just stay empty because every query returns nothing.
+
+The environment variable ``OSB_WIKI_DOMAIN`` selects the wiki (default
+``wiki-dev.open-semantic-lab.org``). The credentials file needs an entry for
+that domain.
 """
 
 import logging
@@ -45,6 +49,10 @@ from opensemantic.batteries.view import (
 # An explicit level is kept when the view starts with show_log=True.
 DEFAULT_LOG_LEVEL = "INFO"
 
+# Wiki of the dashboard: set the environment variable OSB_WIKI_DOMAIN (for
+# example batterie-digital.fraunhofer.de) or change this constant.
+DEFAULT_WIKI_DOMAIN = "wiki-dev.open-semantic-lab.org"
+
 logger = logging.getLogger("opensemantic.batteries.view")
 logger.setLevel(os.environ.get("OSB_VIEW_LOG", DEFAULT_LOG_LEVEL).upper())
 if not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
@@ -60,7 +68,10 @@ logger.propagate = False
 pn.extension()
 
 backend = OSLBatteryBackend(
-    osw_obj=connect_osw(Path(__file__).resolve().parent.parent / "accounts.pwd.yaml"),
+    osw_obj=connect_osw(
+        Path(__file__).resolve().parent.parent / "accounts.pwd.yaml",
+        wiki_domain=os.environ.get("OSB_WIKI_DOMAIN", DEFAULT_WIKI_DOMAIN),
+    ),
     row_class=CyclingDataRow,
     field_names=[
         "test_time",
