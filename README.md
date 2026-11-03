@@ -494,8 +494,17 @@ so they run from any directory, and they connect to the development wiki
 `wiki-dev.open-semantic-lab.org`. The three command-line scripts
 (`upload_example_data_OSL.py`, `upload_large_dataset_OSL.py` and
 `osl_queries.py`) accept `--domain` and `--cred-filepath` to override both.
-`battery_dashboard_OSL.py` takes no arguments, so change its connection in the
-script.
+The OSL dashboards (`battery_dashboard_OSL.py` and
+`battery_dashboard_OSL_single.py`) take no arguments. They read the wiki domain
+from the environment variable `OSB_WIKI_DOMAIN`, and the credentials file needs
+an entry for that domain:
+
+```bash
+OSB_WIKI_DOMAIN=batterie-digital.fraunhofer.de panel serve examples/osl/battery_dashboard_OSL.py --dev
+```
+
+In PowerShell, set the variable first with
+`$env:OSB_WIKI_DOMAIN = "batterie-digital.fraunhofer.de"`.
 
 ### Dashboards
 
