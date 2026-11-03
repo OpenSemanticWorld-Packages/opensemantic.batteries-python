@@ -55,10 +55,12 @@ upload.
 
 2. Procedure (one per distinct test protocol, shared by all cells with it)
    - Category: AgingTestProcedure  Category:OSW1b877eab05e442999835f2f595d1d1e7
-     (subclass of ElectrochemicalTestProcedure
-     Category:OSWdda41d4a4ec0421babe0295c6edcb5df; for other test types,
-     query [[SubClassOf::Category:OSWdda41d4a4ec0421babe0295c6edcb5df]]
-     and pick a fitting subcategory with the user).
+     (subclass of CyclingProcedure, which is a subclass of
+     ElectrochemicalTestProcedure Category:OSWdda41d4a4ec0421babe0295c6edcb5df.
+     For other test types, walk the tree down from
+     [[SubClassOf::Category:OSWdda41d4a4ec0421babe0295c6edcb5df]], which
+     lists only the direct subclasses, and pick a fitting subcategory with
+     the user).
    - Required: label. Example: "Multi-stage discharge aging, 5C first stage".
    - Add: description with the protocol in plain words (charge and discharge
      steps, C-rates, cut-off voltages), plus the source description.
