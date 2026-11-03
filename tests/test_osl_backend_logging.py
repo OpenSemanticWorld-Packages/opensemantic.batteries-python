@@ -141,16 +141,18 @@ def test_page_name_cache_hit_is_logged(caplog):
     assert any("cache hit" in m for m in debug)
 
 
-def test_rows_load_is_logged(caplog):
+def test_frame_load_is_logged(caplog):
     caplog.set_level(logging.DEBUG, logger=LOGGER)
     backend = _backend(_FakeOsw())
-    backend._rows_for("Item:D1")
-    backend._rows_for("Item:D1")
+    backend._df_for("Item:D1")
+    backend._df_for("Item:D1")
     assert any(
         "loaded Item:D1: 3 rows, source inline" in m
         for m in _messages(caplog, logging.INFO)
     )
-    assert any("rows Item:D1: cache hit" in m for m in _messages(caplog, logging.DEBUG))
+    assert any(
+        "frame Item:D1: cache hit" in m for m in _messages(caplog, logging.DEBUG)
+    )
 
 
 def test_datasets_fill_cell_and_procedure(caplog):
@@ -199,7 +201,7 @@ def test_many_titles_use_several_ask_calls():
     titles = [f"Item:D{i}" for i in range(120)]
     osw = _FakeOsw({}, search_script=lambda n, q: titles)
     backend = _backend(osw)
-    backend._rows_cache.update({t: [] for t in titles})
+    backend._df_cache.update({t: None for t in titles})
     backend._name_cache.update({t: t for t in titles})
     assert len(backend.datasets(["Item:C1"], ["Item:P1"])) == 120
     assert len(osw.site.ask_queries) == 3  # 50 + 50 + 20

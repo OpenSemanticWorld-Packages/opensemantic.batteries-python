@@ -49,7 +49,7 @@ def _backend(results, *, disjunctive: bool) -> OSLBatteryBackend:
     # Skip page-name / row round-trips to the (fake) wiki.
     for title in {t for titles in results.values() for t in titles}:
         b._name_cache[title] = title
-        b._rows_cache[title] = []
+        b._df_cache[title] = None
     return b
 
 

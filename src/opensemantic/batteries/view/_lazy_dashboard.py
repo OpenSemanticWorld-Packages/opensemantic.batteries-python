@@ -90,6 +90,11 @@ class _PaneLogHandler(logging.Handler):
         self.refresh()
 
 
+def _frame_len(df) -> int:
+    """Row count of a dataset frame, tolerating ``None``."""
+    return 0 if df is None else len(df)
+
+
 class LazyBatteryDataView(BatteryDataView):
     """``BatteryDataView`` driven by a lazy :class:`BatteryDataBackend`.
 
@@ -569,7 +574,7 @@ class LazyBatteryDataView(BatteryDataView):
                 "idx": i,
                 "id": ds.id,
                 "label": ds.label,
-                "rows": ds.rows,
+                "df": ds.df,
                 "cell_iri": ds.cell_iri,
                 "procedure_iri": ds.procedure_iri,
             }
@@ -622,7 +627,8 @@ class LazyBatteryDataView(BatteryDataView):
             [
                 m
                 for m in self._matching_tests()
-                if self._instance_selections.get(m["idx"], True) and not m["rows"]
+                if self._instance_selections.get(m["idx"], True)
+                and not _frame_len(m["df"])
             ]
         )
 
@@ -631,6 +637,6 @@ class LazyBatteryDataView(BatteryDataView):
         for m in self._matching_tests():
             if not self._instance_selections.get(m["idx"], True):
                 continue
-            if m["rows"]:
-                traces.append({"label": m["label"], "rows": m["rows"], "key": m["id"]})
+            if _frame_len(m["df"]):
+                traces.append({"label": m["label"], "df": m["df"], "key": m["id"]})
         return traces

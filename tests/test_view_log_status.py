@@ -165,15 +165,15 @@ def test_scheduled_tick_with_empty_selection_replaces_querying(logger):
 
 def test_placeholder_separates_empty_and_step_type_less_datasets(logger):
     view = LazyBatteryDataView(backend=MemoryBatteryBackend())
-    rows = view._backend.datasets(["Item:CellA"], ["Item:Formation"])[0].rows
+    df = view._backend.datasets(["Item:CellA"], ["Item:Formation"])[0].df
     view._matches = [
-        {"idx": 0, "id": "a", "label": "a", "rows": []},
-        {"idx": 1, "id": "b", "label": "b", "rows": rows},
+        {"idx": 0, "id": "a", "label": "a", "df": None},
+        {"idx": 1, "id": "b", "label": "b", "df": df},
     ]
     note = view._step_type_note("cycle")
     assert "1 of 2 datasets have no rows (nothing loaded)" in note
     assert "1 of 2 datasets have no step_type" in note
-    view._matches = [{"idx": 0, "id": "a", "label": "a", "rows": []}]
+    view._matches = [{"idx": 0, "id": "a", "label": "a", "df": None}]
     assert view._step_type_note("cycle") == (
         "_No cycle data: 1 of 1 dataset has no rows (nothing loaded)._"
     )

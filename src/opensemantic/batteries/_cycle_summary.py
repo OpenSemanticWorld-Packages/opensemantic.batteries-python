@@ -92,11 +92,98 @@ _CHARGE_STEPS = {StepType.CC_CHG, StepType.CV_CHG, StepType.CCCV_CHG}
 _DISCHARGE_STEPS = {StepType.CC_DCH, StepType.CV_DCH, StepType.CCCV_DCH}
 
 
+def _missing(value) -> bool:
+    """Whether a cell carries no number. NaN is how a frame spells it."""
+    return value is None or value != value
+
+
+def _sequences_from_rows(rows: List):
+    """Capacity in coulomb, cycle, step count and step type, row by row."""
+    capacities, cycles, counts, steps = [], [], [], []
+    for row in rows:
+        capacities.append(_in_coulomb(getattr(row, "capacity", None)))
+        cycle = getattr(row, "cycle_count", None)
+        cycles.append(None if cycle is None else cycle.value)
+        count = getattr(row, "step_count", None)
+        counts.append(None if count is None else count.value)
+        steps.append(getattr(row, "step_type", None))
+    return capacities, cycles, counts, steps
+
+
+def _column(df, name: str, unit: Optional[str] = None) -> List:
+    """One column as a list of magnitudes, or all ``None`` when it is absent."""
+    if name not in df.columns:
+        return [None] * len(df)
+    series = df[name]
+    if not hasattr(series, "pint"):
+        return series.tolist()
+    if unit is not None:
+        series = series.pint.to(unit)
+    return series.pint.magnitude.tolist()
+
+
+def _sequences_from_frame(df):
+    """The same four sequences, read column-wise instead of value by value."""
+    return (
+        _column(df, "capacity", "coulomb"),
+        _column(df, "cycle_count"),
+        _column(df, "step_count"),
+        _column(df, "step_type"),
+    )
+
+
+def _accumulate(capacities, cycles, counts, steps):
+    """Charge and discharge capacity per cycle, in coulomb.
+
+    One pass, because a step's contribution depends on the row before it: the
+    capacity counter either continues across the step boundary or the cycler
+    reset it.
+    """
+    charge: Dict[float, Optional[float]] = {}
+    discharge: Dict[float, Optional[float]] = {}
+    previous: Optional[float] = None  # capacity of the last row that had one
+    step_key = None  # (cycle, step_count, step_type) of the current step
+    last: Optional[float] = None  # capacity of the previous row in the step
+    for capacity, cycle, count, step in zip(capacities, cycles, counts, steps):
+        if _missing(capacity):
+            capacity = None
+        if _missing(cycle):
+            previous = capacity if capacity is not None else previous
+            continue
+        number = cycle
+        charge.setdefault(number, None)
+        discharge.setdefault(number, None)
+        target = (
+            charge
+            if step in _CHARGE_STEPS
+            else discharge if step in _DISCHARGE_STEPS else None
+        )
+        key = (number, None if _missing(count) else count, step)
+        if key != step_key:
+            step_key = key
+            last = None
+        if target is not None and capacity is not None:
+            if last is None:
+                # first row of the step: continue the counter or start at zero
+                base = previous if previous is not None and capacity >= previous else 0
+            else:
+                base = last
+            target[number] = (target[number] or 0.0) + capacity - base
+            last = capacity
+        previous = capacity if capacity is not None else previous
+    return charge, discharge
+
+
 def cycle_summary(
-    rows: List,
+    data,
     label: Union[str, List[Label]] = "Cycle Summary",
 ) -> CycleSummaryDataset:
-    """Summarize cycling rows into one capacity and efficiency record per cycle.
+    """Summarize cycling data into one capacity and efficiency record per cycle.
+
+    ``data`` is either a list of cycling rows or a pint-pandas frame of them.
+    The frame is read column-wise, which is what makes a dataset of a hundred
+    thousand rows summarize in the time pandas needs rather than the time a
+    model per cell costs.
 
     Rows are grouped by ``cycle_count``; rows without one are skipped. The
     charge capacity of a cycle is the sum of the capacity increases of all its
@@ -116,40 +203,11 @@ def cycle_summary(
     inverse. Each is a dimensionless ratio, and ``None`` unless both
     capacities exist and the denominator is greater than zero.
     """
-    charge: Dict[float, Optional[float]] = {}
-    discharge: Dict[float, Optional[float]] = {}
-    previous: Optional[float] = None  # capacity of the last row that had one
-    step_key = None  # (cycle, step_count, step_type) of the current step
-    last: Optional[float] = None  # capacity of the previous row in the step
-    for row in rows:
-        capacity = _in_coulomb(getattr(row, "capacity", None))
-        cycle = getattr(row, "cycle_count", None)
-        if cycle is None or cycle.value is None:
-            previous = capacity if capacity is not None else previous
-            continue
-        number = cycle.value
-        charge.setdefault(number, None)
-        discharge.setdefault(number, None)
-        step = getattr(row, "step_type", None)
-        target = (
-            charge
-            if step in _CHARGE_STEPS
-            else discharge if step in _DISCHARGE_STEPS else None
-        )
-        count = getattr(row, "step_count", None)
-        key = (number, count.value if count is not None else None, step)
-        if key != step_key:
-            step_key = key
-            last = None
-        if target is not None and capacity is not None:
-            if last is None:
-                # first row of the step: continue the counter or start at zero
-                base = previous if previous is not None and capacity >= previous else 0
-            else:
-                base = last
-            target[number] = (target[number] or 0.0) + capacity - base
-            last = capacity
-        previous = capacity if capacity is not None else previous
+    if hasattr(data, "columns"):
+        sequences = _sequences_from_frame(data)
+    else:
+        sequences = _sequences_from_rows(data or [])
+    charge, discharge = _accumulate(*sequences)
 
     def _value(capacity: Optional[float]) -> Optional[ElectricCharge]:
         return None if capacity is None else ElectricCharge(value=capacity)

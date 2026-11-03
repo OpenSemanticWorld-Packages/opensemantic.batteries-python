@@ -17,14 +17,14 @@ that is the ``HasOutput`` of a matching test), so each result is a cycling
 dataset whose rows come straight from ``osw_obj.load_entity(<title>).data``.
 
 A cycling dataset can carry its rows in one of two ways, both handled by
-:meth:`OSLBatteryBackend._entity_rows`:
+:meth:`OSLBatteryBackend._entity_df`, which answers with a frame either way:
 
 * **inline** — rows live in the dataset's ``data`` attribute (small datasets), or
 * **out-of-band** — for large datasets the rows are split into a WikiFile and
-  ``data`` is cleared; the file is referenced from the dataset's first
-  ``Distribution`` (``distributions[0].download_url``, a full wiki file URL). The
-  backend downloads that file, parses its bare ``data`` array and rebuilds the
-  rows in memory (the reverse of ``examples/osl/upload_large_dataset_OSL.py``).
+  ``data`` is cleared; the file is referenced from the dataset's
+  ``Distribution`` (the reverse of ``examples/osl/upload_large_dataset_OSL.py``).
+  The file is read straight into a frame, so a dataset of a hundred thousand
+  rows costs what pandas needs rather than a model per cell.
 
 ``osw`` is imported lazily (only :func:`connect_osw` and the out-of-band download
 path need it), so importing this module — and the whole ``view`` package — never
@@ -135,7 +135,7 @@ class OSLBatteryBackend(BatteryDataBackend):
 
         # Caches so panning around the trees doesn't re-hit the wiki.
         self._name_cache: dict = {}
-        self._rows_cache: dict = {}
+        self._df_cache: dict = {}
 
     # -- Row model -----------------------------------------------------------
 
@@ -199,7 +199,7 @@ class OSLBatteryBackend(BatteryDataBackend):
                 Dataset(
                     id=title,
                     label=self.page_name(title),
-                    rows=self._rows_for(title),
+                    df=self._df_for(title),
                     cell_iri=cell_iri,
                     procedure_iri=proc_iri,
                 )
@@ -418,17 +418,17 @@ class OSLBatteryBackend(BatteryDataBackend):
 
     # -- Row loading ---------------------------------------------------------
 
-    def _rows_for(self, title: str) -> List[Any]:
-        """Load a test (or dataset) page and return its cycling rows, cached.
+    def _df_for(self, title: str):
+        """Load a test (or dataset) page and return its measurements, cached.
 
-        ``load_entity`` yields either a dataset (has ``.data`` directly — as in
+        ``load_entity`` yields either a dataset (has ``.data`` directly, as in
         Query.py) or an ``ElectrochemicalTest`` whose ``.output`` references one
-        or more datasets; both are resolved to a flat list of rows.
+        or more datasets; both are resolved to one frame.
         """
-        if title in self._rows_cache:
-            _log.debug("rows %s: cache hit", title)
-            return self._rows_cache[title]
-        rows: List[Any] = []
+        if title in self._df_cache:
+            _log.debug("frame %s: cache hit", title)
+            return self._df_cache[title]
+        df = None
         if self._osw is not None:
             began = time.perf_counter()
             try:
@@ -439,69 +439,99 @@ class OSLBatteryBackend(BatteryDataBackend):
                     source = "file distribution"
                 else:
                     source = "output datasets"
-                rows = self._entity_rows(entity)
+                df = self._entity_df(entity)
                 _log.info(
                     "loaded %s: %d rows, source %s, %.2f s",
                     title,
-                    len(rows),
+                    0 if df is None else len(df),
                     source,
                     time.perf_counter() - began,
                 )
             except Exception as exc:  # noqa: BLE001
                 _log.warning("load_entity(%r) failed: %s", title, exc)
-        self._rows_cache[title] = rows
-        return rows
+        self._df_cache[title] = df
+        return df
 
-    def _entity_rows(self, entity: Any) -> List[Any]:
+    def _entity_df(self, entity: Any):
         data = getattr(entity, "data", None)
         if data:
-            return list(data)
+            return self._rows_to_df(entity, data)
         # Large-dataset path: the inline ``data`` was cleared and the rows split
-        # into a WikiFile referenced from a Distribution. Download and rebuild.
-        rows = self._rows_from_distributions(entity)
-        if rows:
-            return rows
+        # into a WikiFile referenced from a Distribution. Read it as a frame.
+        df = self._df_from_distributions(entity)
+        if df is not None and len(df):
+            return df
         outputs = getattr(entity, "output", None) or []
         if not isinstance(outputs, (list, tuple)):
             outputs = [outputs]
-        rows: List[Any] = []
+        frames = []
         for out in outputs:
-            if isinstance(out, str):  # an IRI — load the referenced dataset
+            if isinstance(out, str):  # an IRI, load the referenced dataset
                 if self._osw is None:
                     continue
                 try:
                     out = self._osw.load_entity(out)
                 except Exception:  # noqa: BLE001
                     continue
-            d = getattr(out, "data", None)
-            if d:
-                rows.extend(d)
-        return rows
+            part = self._entity_df(out)
+            if part is not None and len(part):
+                frames.append(part)
+        if not frames:
+            return None
+        if len(frames) == 1:
+            return frames[0]
+        import pandas as pd
 
-    # -- Out-of-band (large-dataset) row loading -----------------------------
+        return pd.concat(frames, ignore_index=True)
 
-    def _rows_from_distributions(self, entity: Any) -> List[Any]:
-        """Rebuild rows from a dataset whose ``data`` was split into a file.
+    @staticmethod
+    def _as_controller(entity: Any):
+        """The entity as something that can convert and materialize itself."""
+        if hasattr(entity, "materialize_df"):
+            return entity
+        return entity.cast(CyclingDatasetController)
+
+    def _rows_to_df(self, entity: Any, rows: Any):
+        """Inline rows as a frame, with their units where they are readable.
+
+        A dataset loaded from the wiki converts itself. Anything else - a
+        stand-in, a model from another package - still has rows worth showing,
+        so they become a plain frame over the fields the backend declares.
+        """
+        import pandas as pd
+
+        try:
+            return self._as_controller(entity).to_df()
+        except Exception as exc:  # noqa: BLE001 - fall back to the plain form
+            _log.debug("%s cannot convert itself: %s", type(entity).__name__, exc)
+        return pd.DataFrame(
+            [
+                {name: getattr(row, name, None) for name in self.field_names}
+                for row in rows
+            ]
+        )
+
+    # -- Out-of-band (large-dataset) loading ---------------------------------
+
+    def _df_from_distributions(self, entity: Any):
+        """Read a dataset whose ``data`` was split into a file, as a frame.
 
         The dataset references the file through a ``Distribution``;
-        ``DatasetControllerMixin.materialize_data`` reads it through the file
-        controller registered for that file type and rebuilds the typed rows.
-        The session goes with it: a wiki file read without one comes back as
-        the login page.
+        ``materialize_df`` reads it through the file controller registered for
+        that file type, without building a model per cell. The session goes
+        with it: a wiki file read without one comes back as the login page.
         """
         if not getattr(entity, "distributions", None):
-            return []
+            return None
         try:
-            controller = entity
-            if not hasattr(controller, "materialize_data"):
-                controller = entity.cast(CyclingDatasetController)
+            controller = self._as_controller(entity)
             controller.distributions = [
                 self._with_wiki_file(dist) for dist in controller.distributions or []
             ]
-            return list(controller.materialize_data(osw=self._osw) or [])
-        except Exception as exc:  # noqa: BLE001 - degrade to empty rows
+            return controller.materialize_df(osw=self._osw)
+        except Exception as exc:  # noqa: BLE001 - degrade to no data
             _log.warning("materialize failed: %s", exc)
-            return []
+            return None
 
     def _with_wiki_file(self, distribution: Any) -> Any:
         """The distribution with its file resolved to the wiki controller.
