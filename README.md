@@ -3,6 +3,61 @@
 
 # opensemantic.batteries
 
+## Getting started
+
+Requires Python 3.11 or newer and Git (the `maccor` extra installs
+`maccor-utility` from a Git commit).
+
+### 1. Local dashboard on Maccor files (no OSL)
+
+```bash
+git clone https://github.com/OpenSemanticWorld-Packages/opensemantic.batteries-python.git
+cd opensemantic.batteries-python
+pip install -e ".[view,maccor]"
+panel serve examples/maccor/battery_dashboard_maccor.py --dev
+```
+
+Open the URL that `panel serve` prints. The dashboard reads the Maccor example
+files in `tests/data/cycling/maccor/` and needs no account or network access.
+
+### 2. Dashboard on a live OSL wiki
+
+1. Install the OSL extra:
+
+   ```bash
+   pip install -e ".[osl]"
+   ```
+
+2. Copy the credentials template. The dashboard reads exactly this file name,
+   and Git ignores it (`*.pwd.yaml`):
+
+   ```bash
+   cp examples/accounts.pwd.yaml.template examples/accounts.pwd.yaml
+   ```
+
+3. Fill in `examples/accounts.pwd.yaml`. The top-level key is the wiki domain,
+   followed by your user name and password for that wiki:
+
+   ```yaml
+   batterie-digital.fraunhofer.de:
+     username: user@botname
+     password: secure_pw
+   ```
+
+4. Set `OSB_WIKI_DOMAIN` to the same domain and start the dashboard. Without
+   the variable, the dashboard connects to `wiki-dev.open-semantic-lab.org`.
+
+   ```bash
+   # bash
+   OSB_WIKI_DOMAIN=batterie-digital.fraunhofer.de panel serve examples/osl/battery_dashboard_OSL.py --dev
+   ```
+
+   ```powershell
+   # PowerShell
+   $env:OSB_WIKI_DOMAIN = "batterie-digital.fraunhofer.de"
+   panel serve examples/osl/battery_dashboard_OSL.py --dev
+   ```
+
 > Battery-domain Python models derived from the page package
 > `world.opensemantic.batteries`, plus a typed, unit-aware battery cycling data
 > model with cycler-file importers.
@@ -509,7 +564,7 @@ In PowerShell, set the variable first with
 ### Dashboards
 
 ```bash
-pip install -e ".[view]"
+pip install -e ".[view,maccor]"   # maccor only needed by the Maccor dashboard
 
 panel serve examples/synthetic/battery_dashboard.py --dev         # synthetic data
 panel serve examples/maccor/battery_dashboard_maccor.py --dev  # real Maccor exports
