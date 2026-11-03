@@ -8,7 +8,12 @@ is, so a dataset that changed is downloaded again rather than served stale.
 import pandas as pd
 import pytest
 
-from opensemantic.batteries.view._frame_cache import FrameCache, fingerprint_of
+pytest.importorskip("panel")
+
+from opensemantic.batteries.view._frame_cache import (  # noqa: E402
+    FrameCache,
+    fingerprint_of,
+)
 
 
 @pytest.fixture
