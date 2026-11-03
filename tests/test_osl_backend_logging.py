@@ -108,7 +108,8 @@ def test_attribute_error_is_retried_and_logged(caplog):
     assert backend._search("q") == ["Item:D1"]
     # the first is reported with its origin, the rest stay at debug
     assert any(
-        "hit an AttributeError, retrying" in m for m in _messages(caplog, logging.WARNING)
+        "hit an AttributeError, retrying" in m
+        for m in _messages(caplog, logging.WARNING)
     )
     assert len([m for m in _messages(caplog, logging.DEBUG) if "retry" in m]) == 1
     assert any("2 retries" in m for m in _messages(caplog, logging.INFO))
