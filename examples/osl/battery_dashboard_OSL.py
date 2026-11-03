@@ -33,7 +33,7 @@ import panel as pn
 # Row class whose typed fields (Time, Voltage, ElectricCurrent, ...) drive the
 # axis grid and unit dropdowns. It adds step_type, which the cycle and batch
 # plots need to separate charge from discharge.
-from opensemantic.batteries import StepTypedCyclingDataRow
+from opensemantic.batteries.v1 import CyclingDataRow
 from opensemantic.batteries.view import (
     LazyBatteryDataView,
     OSLBatteryBackend,
@@ -61,7 +61,7 @@ pn.extension()
 
 backend = OSLBatteryBackend(
     osw_obj=connect_osw(Path(__file__).resolve().parent.parent / "accounts.pwd.yaml"),
-    row_class=StepTypedCyclingDataRow,
+    row_class=CyclingDataRow,
     field_names=[
         "test_time",
         "voltage",

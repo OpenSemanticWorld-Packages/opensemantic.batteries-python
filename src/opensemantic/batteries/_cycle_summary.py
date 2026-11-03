@@ -1,8 +1,7 @@
 """Per-cycle summary table of a cycling dataset.
 
-:class:`CycleDataRow` and :class:`CycleSummaryDataset` are temporary local
-extensions: the world.opensemantic.batteries schema has no cycle table yet.
-Once it ships one, regenerate the models and remove this module.
+:class:`CycleDataRow` and :class:`CycleSummaryDataset` are the generated
+models of the cycle table in the world.opensemantic.batteries schema.
 
 A summary has one row per cycle with the charge and the discharge capacity of
 that cycle and the two coulomb efficiencies derived from them (wide form).
@@ -15,69 +14,19 @@ Layer note (see CLAUDE.md): Pydantic **v1**, like the cycling classes.
 import math
 from typing import Dict, List, Optional, Union
 
-from pydantic.v1 import Field
-
-from opensemantic.base.v1 import Dataset
 from opensemantic.batteries._cycling import StepType
+from opensemantic.batteries.v1._model import (  # noqa: F401 (re-export)
+    CycleDataRow,
+    CycleSummaryDataset,
+)
 from opensemantic.characteristics.quantitative.v1 import (
     Count,
     Efficiency,
     ElectricCharge,
 )
-from opensemantic.core.v1 import Characteristic, Label
+from opensemantic.core.v1 import Label
 
 __all__ = ["CycleDataRow", "CycleSummaryDataset", "cycle_summary"]
-
-
-class CycleDataRow(Characteristic):
-    """One row of a cycle summary: the capacities and efficiencies of a cycle.
-
-    Temporary local extension until the world.opensemantic.batteries schema
-    ships a cycle table; then drop this class.
-    """
-
-    cycle_count: Count = Field(..., description="Cycle number.")
-    charge_capacity: Optional[ElectricCharge] = Field(
-        None, description="Charge capacity of the cycle."
-    )
-    discharge_capacity: Optional[ElectricCharge] = Field(
-        None, description="Discharge capacity of the cycle."
-    )
-    charge_coulomb_efficiency: Optional[Efficiency] = Field(
-        None,
-        description="Charge coulomb efficiency of the cycle: charge capacity "
-        "divided by discharge capacity. Stored as a dimensionless ratio.",
-    )
-    discharge_coulomb_efficiency: Optional[Efficiency] = Field(
-        None,
-        description="Discharge coulomb efficiency of the cycle: discharge "
-        "capacity divided by charge capacity. Stored as a dimensionless ratio.",
-    )
-
-
-class CycleSummaryDataset(Dataset):
-    """A per-cycle summary dataset, with a default label for the frame conversion.
-
-    Temporary local extension until the world.opensemantic.batteries schema
-    ships a cycle table; then drop this class.
-    """
-
-    data: Optional[List[CycleDataRow]] = None
-
-    @classmethod
-    def from_df(
-        cls,
-        df,
-        label: Optional[Union[str, List[Label]]] = "Cycle Summary",
-        **kwargs,
-    ):
-        """Build a dataset from a pint-pandas frame.
-
-        ``label`` is required by the model, so a default is supplied; pass a
-        string or a list of ``Label``.
-        """
-        labels = [Label(text=label)] if isinstance(label, str) else label
-        return super().from_df(df, label=labels, **kwargs)
 
 
 def _in_coulomb(value: Optional[ElectricCharge]) -> Optional[float]:

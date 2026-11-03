@@ -35,7 +35,8 @@ from typing import Any, Dict, List, Tuple
 import panel as pn
 
 from opensemantic.base import _pint_csv
-from opensemantic.batteries import CyclingDatasetController, StepTypedCyclingDataRow
+from opensemantic.batteries import CyclingDatasetController
+from opensemantic.batteries.v1 import CyclingDataRow
 from opensemantic.batteries.view import (
     BatteryDataBackend,
     Dataset,
@@ -83,11 +84,11 @@ class MultistageBatteryBackend(BatteryDataBackend):
             self._cell_procedure[cell_iri] = proc_iri
         self._procedures = dict(sorted(self._procedures.items()))
         # cell iri -> rows, loaded on first selection and never evicted
-        self._rows: Dict[str, List[StepTypedCyclingDataRow]] = {}
+        self._rows: Dict[str, List[CyclingDataRow]] = {}
 
     @property
     def row_class(self) -> type:
-        return StepTypedCyclingDataRow
+        return CyclingDataRow
 
     @property
     def cell_root(self) -> TreeNode:
@@ -118,7 +119,7 @@ class MultistageBatteryBackend(BatteryDataBackend):
             ]
         return []
 
-    def _load(self, cell_iri: str) -> List[StepTypedCyclingDataRow]:
+    def _load(self, cell_iri: str) -> List[CyclingDataRow]:
         """Rows of a cell, read once the way ``materialize_data`` reads CSV."""
         if cell_iri in self._rows:
             return self._rows[cell_iri]

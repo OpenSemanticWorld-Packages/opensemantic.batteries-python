@@ -7,7 +7,7 @@ charge, a CC-CV charge and four CC discharge stages. The script
 
 1. loads the pickle with a restricted unpickler (pandas, numpy and ``slice``
    only),
-2. parses the cycles into ``StepTypedCyclingDataRow`` rows with a continuous
+2. parses the cycles into ``CyclingDataRow`` rows with a continuous
    test time, cycle numbers from 0, ``step_type`` and a capacity that is reset
    only when the step type changes (the four discharge stages form one counter),
 3. validates the rows and compares the per-cycle discharge capacity from
@@ -62,17 +62,13 @@ from osw.express import OswExpress
 
 from opensemantic.base import _pint_csv
 from opensemantic.base._dataset_controller_mixin import row_class_of
-from opensemantic.batteries import (
-    CyclingDatasetController,
-    LinkedTestProcedureItem,
-    ProcedureLinkedElectrochemicalTest,
-    StepType,
-    StepTypedCyclingDataRow,
-    cycle_summary,
-)
+from opensemantic.batteries import CyclingDatasetController, StepType, cycle_summary
 from opensemantic.batteries.v1 import (
     AgingTestProcedure,
+    CyclingDataRow,
     CylindricalCell,
+    ElectrochemicalTest,
+    TestProcedureItem,
 )
 from opensemantic.core.v1 import Description, Label
 
@@ -236,7 +232,7 @@ def build_frame(cycles: Dict[int, pd.DataFrame], max_cycles: Optional[int]):
     )
 
 
-def validate(rows: List[StepTypedCyclingDataRow]) -> None:
+def validate(rows: List[CyclingDataRow]) -> None:
     """Raise ``ValueError`` on the first violated rule."""
     required = [
         "voltage",
@@ -343,15 +339,13 @@ def build_entities(cell_id: str, c_rate: int):
     return cell, procedure, name
 
 
-def build_test(
-    cell, procedure, name, cell_id, dataset
-) -> ProcedureLinkedElectrochemicalTest:
-    return ProcedureLinkedElectrochemicalTest(
+def build_test(cell, procedure, name, cell_id, dataset) -> ElectrochemicalTest:
+    return ElectrochemicalTest(
         uuid=uuid.uuid5(NAMESPACE, f"test:{cell_id}"),
         label=[Label(text=f"Cell {cell_id} - {name}")],
         device_under_test=[cell.get_iri()],
         test_procedure=[
-            LinkedTestProcedureItem(
+            TestProcedureItem(
                 test_procedure_subcategory=AGING_PROCEDURE,
                 test_procedure_instance=procedure.get_iri(),
                 test_procedure_instance_property="Property:HasProcedure",

@@ -29,16 +29,11 @@ try:
     from opensemantic.batteries._cycling import (  # noqa: F401
         CyclingDatasetController,
         StepType,
-        StepTypedCyclingDataRow,
     )
     from opensemantic.batteries._importers import (  # noqa: F401
         CyclerImporter,
         MaccorImporter,
         read_maccor,
-    )
-    from opensemantic.batteries._procedure_link import (  # noqa: F401
-        LinkedTestProcedureItem,
-        ProcedureLinkedElectrochemicalTest,
     )
 except ImportError as _error:  # pragma: no cover - an optional dependency is missing
     import logging as _logging

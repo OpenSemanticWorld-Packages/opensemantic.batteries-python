@@ -100,8 +100,7 @@ the plots run in the next tick, so the browser shows the status first. With
 
 When no plotted dataset has a `step_type`, the cycle and batch plots show a
 placeholder that names the number of datasets without it (datasets without rows
-are named separately). Use
-`StepTypedCyclingDataRow` as `row_class` for such data.
+are named separately).
 
 To try the lazy view without a wiki (no credentials, no network) run
 [`examples/synthetic/battery_dashboard_lazy.py`](../../../../examples/synthetic/battery_dashboard_lazy.py),
