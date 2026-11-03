@@ -51,6 +51,10 @@ from opensemantic.batteries.view._backend import (
     Dataset,
     TreeNode,
 )
+from opensemantic.batteries.view._frame_cache import FrameCache, fingerprint_of
+
+_UNSET = object()
+"""Tells "no cache_dir given" from an explicit ``None``, which disables it."""
 
 DEFAULT_WIKI_DOMAIN = "wiki-dev.open-semantic-lab.org"
 
@@ -112,6 +116,7 @@ class OSLBatteryBackend(BatteryDataBackend):
         cell_root_label: str = BatteryCell.__name__,
         procedure_root_label: str = ElectrochemicalTestProcedure.__name__,
         disjunctive_query: bool = False,
+        cache_dir: Optional[Any] = _UNSET,
     ) -> None:
         self._osw = osw_obj
         self._row_class = row_class
@@ -136,6 +141,12 @@ class OSLBatteryBackend(BatteryDataBackend):
         # Caches so panning around the trees doesn't re-hit the wiki.
         self._name_cache: dict = {}
         self._df_cache: dict = {}
+        # ... and one on disk, so a restart does not re-download every
+        # dataset. ``cache_dir=None`` turns it off.
+        if cache_dir is _UNSET:
+            self._frames: Optional[FrameCache] = FrameCache()
+        else:
+            self._frames = FrameCache(cache_dir) if cache_dir is not None else None
 
     # -- Row model -----------------------------------------------------------
 
@@ -439,7 +450,22 @@ class OSLBatteryBackend(BatteryDataBackend):
                     source = "file distribution"
                 else:
                     source = "output datasets"
-                df = self._entity_df(entity)
+                # the page says what its content is before it is downloaded,
+                # so an unchanged dataset is read from disk instead
+                fingerprint = fingerprint_of(entity)
+                cache_key = self._cache_key(title)
+                df = (
+                    self._frames.get(cache_key, fingerprint)
+                    if self._frames is not None
+                    else None
+                )
+                if df is None:
+                    df = self._entity_df(entity)
+                    if self._frames is not None:
+                        self._frames.put(cache_key, fingerprint, df)
+                    source += ", downloaded"
+                else:
+                    source += ", cached"
                 _log.info(
                     "loaded %s: %d rows, source %s, %.2f s",
                     title,
@@ -451,6 +477,18 @@ class OSLBatteryBackend(BatteryDataBackend):
                 _log.warning("load_entity(%r) failed: %s", title, exc)
         self._df_cache[title] = df
         return df
+
+    def _cache_key(self, title: str) -> str:
+        """Page title qualified by the wiki it came from.
+
+        The cache is shared between wikis, and the same page title means
+        different data on each of them.
+        """
+        domain = getattr(self._osw, "domain", None)
+        if domain is None:
+            site = getattr(self._osw, "site", None)
+            domain = getattr(getattr(site, "mw_site", None), "host", None)
+        return f"{domain or 'unknown'}|{title}"
 
     def _entity_df(self, entity: Any):
         data = getattr(entity, "data", None)
