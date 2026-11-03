@@ -5,8 +5,7 @@
 
 ## Getting started
 
-Requires Python 3.11 or newer and Git (the `maccor` extra installs
-`maccor-utility` from a Git commit).
+Requires Python 3.11 or newer.
 
 ### 1. Local dashboard on Maccor files (no OSL)
 
@@ -205,9 +204,6 @@ Extras from `setup.cfg`:
 - `docs`: `playwright`, `imageio`, `view` and `maccor`. Run
   `playwright install chromium` once after the installation.
 - `testing`: `setuptools`, `pytest`, `pytest-cov` and `maccor`.
-
-One dependency is a temporary git pin: `maccor-utility` is installed from a
-pinned commit. See [Pending upstream fixes](#pending-upstream-fixes).
 
 ## Metadata models
 
@@ -653,13 +649,6 @@ skips the test.
   drops object columns that are all missing (e.g. `step_type` of rows that
   carry none), because the base `from_df` fails on them. Remove that guard
   once base handles them.
-- **Release the `maccor-utility` fix**: `setup.cfg` pins `maccor-utility` to a git
-  commit that contains the `TestTime` / `StepTime` duration-parsing fix (pull
-  request OpenBattTools/maccor-utility#4). Repin to a released version once the
-  pull request is merged and published.
-
-That git pin blocks a release to PyPI, because PyPI rejects dependencies that
-are direct URLs.
 
 ## Note
 
