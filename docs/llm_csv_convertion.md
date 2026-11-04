@@ -11,8 +11,12 @@ Convert this file to the correct CSV file format for me to download.
 and attaches the file. To upload the converted file, see
 [LLM prompt for uploading cycling data](llm_upload_prompt.md).
 
-The format and the validation rules are the same as in the upload prompt and
-in `examples/dev/upload_multistage_dataset_OSL.py`. The reference writer at the
+The columns, units, `step_type` values and the CSV format are the same as in
+the upload prompt. Validation rules 1 to 4 are the same as there and in
+`examples/dev/upload_multistage_dataset_OSL.py`. This prompt adds two cases
+that a converter meets more often: rule 5 shifts a cycle count that starts at
+1, and rule 6 also accepts a per-cycle charge capacity from the source. The
+unit conversion adds mWh. The reference writer at the
 end of the prompt was checked on 2026-11-04: `opensemantic.base._pint_csv.read_csv`
 reads its output back with the same rows, columns, units and values, and
 `CyclingDatasetController.from_df` builds rows from it.
