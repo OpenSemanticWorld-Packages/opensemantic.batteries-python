@@ -13,6 +13,7 @@ OpenSemanticLab wiki.
 
 Overview <readme>
 LLM upload prompt <llm_upload_prompt>
+LLM CSV conversion prompt <llm_csv_convertion>
 Contributions & Help <contributing>
 License <license>
 Authors <authors>
