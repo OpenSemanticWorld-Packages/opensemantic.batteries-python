@@ -557,6 +557,25 @@ OSB_WIKI_DOMAIN=batterie-digital.fraunhofer.de panel serve examples/osl/battery_
 In PowerShell, set the variable first with
 `$env:OSB_WIKI_DOMAIN = "batterie-digital.fraunhofer.de"`.
 
+#### The same dashboard as a notebook
+
+`examples/osl/battery_dashboard_OSL.ipynb` is the notebook form, and it runs on
+two kinds of kernel:
+
+- **In the wiki's JupyterLite sandbox.** Upload it to the wiki and open it with
+  `.../extensions/JupyterLite/dist/lab/index.html?fromURL=<the img_auth.php URL
+  of the file>`. The kernel shares the browser's MediaWiki session, so there is
+  no credentials file and no login: `osw_bootstrap.setup()` installs the stack
+  and `osw_bootstrap.wtsite()` binds to the wiki it was served from. The wheels
+  have to be in that site's build; `opensemantic.batteries`, `panel` and
+  `panelini` are not in the base OSW set.
+- **On a normal kernel**, where neither `osw_bootstrap` nor `piplite` exists.
+  It falls back to `pip` and to `connect_osw`, reading `OSW_CRED_FILEPATH` and
+  `OSB_WIKI_DOMAIN`.
+
+The dashboard is wrapped in a fixed height, because panelini's `.content` is
+`height: 100%` and a notebook output cell has no height of its own.
+
 ### Dashboards
 
 ```bash

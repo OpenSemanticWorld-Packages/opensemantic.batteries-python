@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Lazy dashboard: run the dataset query directly when there is no server
+  session. The next-tick detour that shows "Querying ..." before the work
+  tested for a Bokeh document, and a notebook kernel has one of those too -
+  without a session, so the callback was never run and a selection stalled
+  on "Querying datasets for N cells x M procedures..." forever. Only hit
+  `show_log=True` with a cell and a procedure both selected, which is what
+  the JupyterLite notebook does.
+- `examples/osl/battery_dashboard_OSL.ipynb`: the OSL dashboard as a
+  notebook. Runs in the wiki's JupyterLite sandbox on the browser session
+  with no credentials, and on a normal kernel through pip and a
+  credentials file.
+
 - `step_type` on `CyclingDataRow` with the `StepType` enum, set by the Maccor
   importer from the `Mode` column (`R` to `REST`, `C` to `CCCV_CHG`, `D` to
   `CC_DCH`, other codes to `OTHER`).

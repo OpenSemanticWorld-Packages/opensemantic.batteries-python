@@ -503,8 +503,15 @@ class LazyBatteryDataView(BatteryDataView):
         """Push the selection sets into the query and re-plot.
 
         With ``show_log`` the status line shows "Querying" first. Under a
-        server (a Bokeh document is present) the query and the plots then run
-        in the next tick, so the browser shows the status before the work.
+        server the query and the plots then run in the next tick, so the
+        browser shows the status before the work.
+
+        What marks a server is the session, not the document. Panel wraps
+        every change coming back from the browser in ``set_curdoc``, so in a
+        notebook kernel ``pn.state.curdoc`` is a real Document too - one with
+        no session and nothing to run its next-tick callbacks. Scheduling on
+        it there drops the query silently and the status line keeps saying
+        "Querying" forever.
         """
         self._selected_cell_ids = list(self._sel_instances["cell"])
         self._selected_proc_ids = list(self._sel_instances["proc"])
@@ -515,7 +522,7 @@ class LazyBatteryDataView(BatteryDataView):
                 f"Querying datasets for {n_cells} cells x {n_procs} procedures..."
             )
             doc = pn.state.curdoc
-            if doc is not None:
+            if doc is not None and getattr(doc, "session_context", None):
                 doc.add_next_tick_callback(self._finish_selection)
                 return
         self._finish_selection()
