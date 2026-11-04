@@ -158,7 +158,7 @@ Rules that every converted file must satisfy (validate all rows, column-wise):
 
 ## CSV file format (exactly this)
 
-UTF-8, LF line endings, comma separator. Line 1: an empty index name, then
+UTF-8, comma separator, LF or CRLF line endings. Line 1: an empty index name, then
 the column names. Line 2: "unit", then the unit per column (empty for
 step_type). Then one line per row, with a running index from 0. Leave a cell
 empty when the value is missing. Example:
@@ -169,9 +169,10 @@ unit,second,volt,ampere,dimensionless,dimensionless,second,coulomb,joule,
 1,4.0,2.9811,5.49851,0.0,1.0,,27.49103,,CC_CHG
 
 If the opensemantic.batteries Python package is available, produce this file
-with CyclingDatasetController.from_df(frame).serialize_data("csv") on a
-sample and compare it byte for byte with your file, or use
-examples/dev/upload_multistage_dataset_OSL.py as the reference.
+with CyclingDatasetController.from_df(frame).serialize_data("csv"). It writes
+the line ending of the operating system (CRLF on Windows). The upload with
+examples/dev/upload_multistage_dataset_OSL.py --csv --format csv needs the
+file byte for byte as serialize_data writes it on the uploading machine.
 
 ## Provenance
 
